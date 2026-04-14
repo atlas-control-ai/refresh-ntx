@@ -149,9 +149,10 @@ function parseMenstruationPref(row: SpreadsheetRow): string | null {
   return null;
 }
 
-export async function importSpreadsheet(
+export async function importBatch(
   rows: SpreadsheetRow[],
-  cycleIds: { aug: string; nov: string; feb?: string; may?: string }
+  cycleIds: { aug: string; nov: string; feb?: string; may?: string },
+  batchOffset: number
 ): Promise<ImportResult> {
   const supabase = await createClient();
   const result: ImportResult = {
@@ -163,17 +164,9 @@ export async function importSpreadsheet(
     errorMessages: [],
   };
 
-  // First, reset the refresh_id sequence to accommodate imported IDs
-  // Find the max Refresh ID in the CSV
-  let maxRefreshId = 1000;
-  for (const row of rows) {
-    const rid = parseInt(row["Refresh ID"], 10);
-    if (!isNaN(rid) && rid > maxRefreshId) maxRefreshId = rid;
-  }
-
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const rowNum = i + 2;
+    const rowNum = batchOffset + i + 2;
 
     try {
       const firstName = row["Child's Name - First Name"]?.trim();
@@ -345,8 +338,10 @@ export async function importSpreadsheet(
     }
   }
 
-  // Reset the refresh_id sequence so new registrations get IDs above the imported ones
-  await supabase.rpc("reset_refresh_id_sequence");
-
   return result;
+}
+
+export async function resetRefreshIdSequence() {
+  const supabase = await createClient();
+  await supabase.rpc("reset_refresh_id_sequence");
 }

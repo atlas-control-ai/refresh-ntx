@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { importSpreadsheet, type ImportResult } from "./actions";
+import { importBatch, resetRefreshIdSequence, type ImportResult } from "./actions";
 
 interface Cycle {
   id: string;
@@ -29,6 +29,8 @@ const SEASON_LABELS: Record<string, string> = {
   may: "May",
 };
 
+const BATCH_SIZE = 20;
+
 type Step = "upload" | "preview" | "importing" | "done";
 
 export function ImportTool({ cycles }: { cycles: Cycle[] }) {
@@ -37,8 +39,8 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
   const [csvData, setCsvData] = useState<any[]>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [progress, setProgress] = useState({ processed: 0, total: 0 });
 
-  // Cycle selection for each season
   const augCycle = cycles.find((c) => c.season === "aug");
   const novCycle = cycles.find((c) => c.season === "nov");
   const febCycle = cycles.find((c) => c.season === "feb");
@@ -64,13 +66,55 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
 
   async function handleImport() {
     setStep("importing");
-    const res = await importSpreadsheet(csvData, {
+    setProgress({ processed: 0, total: csvData.length });
+
+    const cycleIds = {
       aug: augCycle?.id ?? "",
       nov: novCycle?.id ?? "",
       feb: febCycle?.id,
       may: mayCycle?.id,
-    });
-    setResult(res);
+    };
+
+    const totals: ImportResult = {
+      total: csvData.length,
+      created: 0,
+      duplicates: 0,
+      skipped: 0,
+      errors: 0,
+      errorMessages: [],
+    };
+
+    // Process in batches
+    for (let i = 0; i < csvData.length; i += BATCH_SIZE) {
+      const batch = csvData.slice(i, i + BATCH_SIZE);
+
+      try {
+        const batchResult = await importBatch(batch, cycleIds, i);
+        totals.created += batchResult.created;
+        totals.duplicates += batchResult.duplicates;
+        totals.skipped += batchResult.skipped;
+        totals.errors += batchResult.errors;
+        totals.errorMessages.push(...batchResult.errorMessages);
+      } catch (err) {
+        totals.errors += batch.length;
+        totals.errorMessages.push(
+          `Batch ${Math.floor(i / BATCH_SIZE) + 1} failed: ${
+            err instanceof Error ? err.message : "Unknown error"
+          }`
+        );
+      }
+
+      setProgress({ processed: Math.min(i + BATCH_SIZE, csvData.length), total: csvData.length });
+    }
+
+    // Reset the refresh_id sequence after all imports
+    try {
+      await resetRefreshIdSequence();
+    } catch {
+      // non-critical
+    }
+
+    setResult(totals);
     setStep("done");
   }
 
@@ -222,15 +266,32 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
   }
 
   if (step === "importing") {
+    const pct = progress.total
+      ? Math.round((progress.processed / progress.total) * 100)
+      : 0;
+
     return (
       <Card>
-        <CardContent className="flex items-center justify-center py-16">
-          <div className="text-center">
+        <CardContent className="py-16">
+          <div className="mx-auto max-w-md text-center">
             <p className="text-lg font-medium text-zinc-900">
-              Importing {csvData.length} records...
+              Importing records...
             </p>
             <p className="mt-1 text-sm text-zinc-500">
-              This will take a few minutes. Please don&apos;t close this page.
+              {progress.processed} of {progress.total} processed
+            </p>
+
+            {/* Progress bar */}
+            <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-zinc-200">
+              <div
+                className="h-full rounded-full bg-zinc-900 transition-all duration-300"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="mt-2 text-sm font-medium text-zinc-700">{pct}%</p>
+
+            <p className="mt-4 text-xs text-zinc-400">
+              Processing in batches of {BATCH_SIZE}. Please don&apos;t close this page.
             </p>
           </div>
         </CardContent>
