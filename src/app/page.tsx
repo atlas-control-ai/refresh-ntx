@@ -3,9 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 export default async function Home() {
   const supabase = await createClient();
 
-  // Quick connection check
-  const { error } = await supabase.from("_placeholder").select("*").limit(1);
-  const connected = !error || error.code === "PGRST116" || error.code === "42P01";
+  // Quick connection check — query a real table
+  const { error } = await supabase.from("program_years").select("id").limit(1);
+  const connected = !error;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50">
