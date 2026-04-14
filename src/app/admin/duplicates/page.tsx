@@ -4,8 +4,7 @@ import { DuplicateQueue } from "./duplicate-queue";
 export default async function DuplicatesPage() {
   const supabase = await createClient();
 
-  // Get all students flagged as duplicates that haven't been confirmed yet
-  // (is_duplicate = true AND duplicate_of_id IS NULL means flagged but not yet resolved)
+  // Get all students flagged as duplicates (unresolved)
   const { data: flagged } = await supabase
     .from("students")
     .select(
@@ -20,40 +19,78 @@ export default async function DuplicatesPage() {
     )
     .eq("is_duplicate", true)
     .is("duplicate_of_id", null)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(50);
 
-  // For each flagged student, find potential matches
-  const duplicatesWithMatches = [];
+  // Collect all names and DOBs to find matches in ONE query
+  const names = new Set<string>();
+  const dobs = new Set<string>();
+  const studentIds = new Set<string>();
+  const flaggedIds = new Set<string>();
 
-  for (const student of flagged ?? []) {
-    // Search for potential matches by name or DOB
-    const { data: matches } = await supabase
+  for (const s of flagged ?? []) {
+    flaggedIds.add(s.id);
+    names.add(s.first_name.toLowerCase());
+    names.add(s.last_name.toLowerCase());
+    dobs.add(s.date_of_birth);
+    if (s.school_student_id) studentIds.add(s.school_student_id);
+  }
+
+  // Fetch ALL potential match candidates in one query
+  // Match on: same last name OR same DOB
+  let allCandidates: typeof flagged = [];
+  if (flagged && flagged.length > 0) {
+    const dobList = Array.from(dobs);
+    const lastNames = Array.from(new Set((flagged ?? []).map((s) => s.last_name)));
+
+    // Query students matching any of the last names or DOBs
+    const { data } = await supabase
       .from("students")
       .select(
         `
         id, refresh_id, first_name, last_name, date_of_birth, gender,
-        school_student_id, notes, created_at,
+        school_student_id, notes, is_duplicate, duplicate_of_id, created_at,
         guardians(first_name, last_name, email, phone),
         enrollments(grade, school_name, pack_code,
           program_years(label)
         )
       `
       )
-      .neq("id", student.id)
       .or(
-        `and(first_name.ilike.${student.first_name},last_name.ilike.${student.last_name}),date_of_birth.eq.${student.date_of_birth}${
-          student.school_student_id
-            ? `,school_student_id.eq.${student.school_student_id}`
-            : ""
-        }`
+        lastNames.map((n) => `last_name.ilike.${n}`).join(",") +
+          "," +
+          dobList.map((d) => `date_of_birth.eq.${d}`).join(",")
       )
-      .limit(5);
+      .limit(500);
 
-    duplicatesWithMatches.push({
-      student,
-      matches: matches ?? [],
-    });
+    allCandidates = data ?? [];
   }
+
+  // Build matches client-side
+  const candidateMap = new Map(
+    (allCandidates ?? []).map((c) => [c.id, c])
+  );
+
+  const duplicatesWithMatches = (flagged ?? []).map((student) => {
+    const matches = (allCandidates ?? []).filter((c) => {
+      if (c.id === student.id) return false;
+      let signals = 0;
+      if (
+        c.first_name.toLowerCase() === student.first_name.toLowerCase() &&
+        c.last_name.toLowerCase() === student.last_name.toLowerCase()
+      )
+        signals++;
+      if (c.date_of_birth === student.date_of_birth) signals++;
+      if (
+        student.school_student_id &&
+        c.school_student_id === student.school_student_id
+      )
+        signals++;
+      return signals >= 2;
+    });
+
+    return { student, matches };
+  });
 
   return (
     <div className="space-y-6">

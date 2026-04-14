@@ -41,7 +41,8 @@ export default async function DistributionPage({
       `
       )
       .eq("program_year_id", programYearId)
-      .order("school_name");
+      .order("school_name")
+      .limit(200);
 
     enrollments = data ?? [];
   }
