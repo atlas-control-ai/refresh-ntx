@@ -16,6 +16,7 @@ const navItems = [
   { href: "/admin/checkin", label: "Event Check-In", icon: "CheckCircle", adminOnly: false },
   { href: "/admin/duplicates", label: "Duplicates", icon: "AlertTriangle", adminOnly: true },
   { href: "/admin/cycles", label: "Cycles", icon: "Calendar", adminOnly: true },
+  { href: "/admin/import", label: "CSV Import", icon: "Upload", adminOnly: true },
   { href: "/admin/reports", label: "Reports", icon: "BarChart", adminOnly: true },
 ];
 
