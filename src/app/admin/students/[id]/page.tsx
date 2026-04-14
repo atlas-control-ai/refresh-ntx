@@ -20,7 +20,7 @@ export default async function StudentPage({
       guardians(*),
       enrollments(
         *,
-        cycles(season, distribution_date, program_years(label)),
+        program_years(label),
         distributions(*)
       )
     `

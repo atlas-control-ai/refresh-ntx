@@ -11,60 +11,68 @@ export default async function DistributionPage({
   const supabase = await createClient();
   const role = await getUserRole();
 
-  // Get all cycles for the selector
-  const { data: cycles } = await supabase
-    .from("cycles")
-    .select("id, season, distribution_date, is_open, program_years(label)")
-    .order("created_at", { ascending: false });
+  // Get active program year
+  const { data: activeYear } = await supabase
+    .from("program_years")
+    .select("id, label")
+    .eq("is_active", true)
+    .single();
 
-  // Default to the open cycle or the first one
-  const openCycle = cycles?.find((c) => c.is_open);
-  const selectedCycleId = params.cycle ?? openCycle?.id ?? cycles?.[0]?.id ?? "";
+  const programYearId = params.year ?? activeYear?.id;
 
-  // Get enrollments for the selected cycle with student + distribution data
-  let enrollments: Array<{
-    id: string;
-    pack_code: string;
-    grade: string;
-    school_district: string;
-    school_name: string;
-    student_id: string;
-    students: { id: string; refresh_id: number; first_name: string; last_name: string };
-    distributions: Array<{ id: string; method: string; completed: boolean; completed_at: string | null }>;
-  }> = [];
+  // Get all program years for selector
+  const { data: programYears } = await supabase
+    .from("program_years")
+    .select("id, label, is_active")
+    .order("label", { ascending: false });
 
-  if (selectedCycleId) {
+  // Get enrollments for the selected program year with distributions
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let enrollments: any[] = [];
+
+  if (programYearId) {
     const { data } = await supabase
       .from("enrollments")
       .select(
         `
-        id, pack_code, grade, school_district, school_name, student_id,
+        id, pack_code, grade, school_district, school_name,
         students!inner(id, refresh_id, first_name, last_name),
-        distributions(id, method, completed, completed_at)
+        distributions(id, season, method, completed, completed_at)
       `
       )
-      .eq("cycle_id", selectedCycleId)
+      .eq("program_year_id", programYearId)
       .order("school_name");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    enrollments = (data as any) ?? [];
+    enrollments = data ?? [];
   }
+
+  // Get distribution dates from cycles
+  const { data: cycles } = await supabase
+    .from("cycles")
+    .select("season, distribution_date")
+    .eq("program_year_id", programYearId ?? "");
+
+  const distDates: Record<string, string | null> = {};
+  cycles?.forEach((c) => {
+    distDates[c.season] = c.distribution_date;
+  });
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-zinc-900">Distribution Tracking</h1>
         <p className="text-sm text-zinc-500">
-          Track pack distribution by pickup, school delivery, and bin.
+          Track pack distribution across all four events.
         </p>
       </div>
       <DistributionView
         enrollments={enrollments}
-        cycles={cycles ?? []}
-        selectedCycleId={selectedCycleId}
+        programYears={programYears ?? []}
+        selectedYearId={programYearId ?? ""}
+        distDates={distDates}
         isAdmin={role === "admin"}
         search={params.q ?? ""}
-        methodFilter={params.method ?? ""}
+        seasonFilter={params.season ?? ""}
       />
     </div>
   );

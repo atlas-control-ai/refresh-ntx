@@ -21,7 +21,7 @@ interface Enrollment {
   grade: string;
   school_district: string;
   school_name: string;
-  cycle_id: string;
+  program_year_id: string;
 }
 
 interface Guardian {
@@ -46,21 +46,20 @@ interface Student {
   enrollments: Enrollment[];
 }
 
-interface Cycle {
+interface ProgramYear {
   id: string;
-  season: string;
-  program_years: { label: string } | null;
+  label: string;
 }
 
 interface Props {
   students: Student[];
-  cycles: Cycle[];
+  programYears: ProgramYear[];
   initialSearch: string;
   initialDistrict: string;
   initialPackCode: string;
   initialUnenrolled: string;
   initialDuplicate: string;
-  initialCycle: string;
+  initialYear: string;
 }
 
 const SEASON_LABELS: Record<string, string> = {
@@ -72,13 +71,13 @@ const SEASON_LABELS: Record<string, string> = {
 
 export function StudentList({
   students,
-  cycles,
+  programYears,
   initialSearch,
   initialDistrict,
   initialPackCode,
   initialUnenrolled,
   initialDuplicate,
-  initialCycle,
+  initialYear,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -89,7 +88,7 @@ export function StudentList({
   const [packCode, setPackCode] = useState(initialPackCode);
   const [unenrolled, setUnenrolled] = useState(initialUnenrolled);
   const [duplicate, setDuplicate] = useState(initialDuplicate);
-  const [cycle, setCycle] = useState(initialCycle);
+  const [year, setYear] = useState(initialYear);
 
   function applyFilters(overrides: Record<string, string> = {}) {
     const params = new URLSearchParams();
@@ -99,7 +98,7 @@ export function StudentList({
       pack_code: packCode,
       unenrolled,
       duplicate,
-      cycle,
+      year,
       ...overrides,
     };
     Object.entries(values).forEach(([k, v]) => {
@@ -151,16 +150,16 @@ export function StudentList({
         />
         <select
           className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm"
-          value={cycle}
+          value={year}
           onChange={(e) => {
-            setCycle(e.target.value);
-            applyFilters({ cycle: e.target.value });
+            setYear(e.target.value);
+            applyFilters({ year: e.target.value });
           }}
         >
-          <option value="">All Cycles</option>
-          {cycles.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.program_years?.label} {SEASON_LABELS[c.season] ?? c.season}
+          <option value="">All Years</option>
+          {programYears.map((py) => (
+            <option key={py.id} value={py.id}>
+              {py.label}
             </option>
           ))}
         </select>

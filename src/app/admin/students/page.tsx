@@ -14,7 +14,7 @@ export default async function StudentsPage({
   const packCode = params.pack_code ?? "";
   const unenrolled = params.unenrolled ?? "";
   const duplicate = params.duplicate ?? "";
-  const cycleId = params.cycle ?? "";
+  const yearId = params.year ?? "";
 
   // Build student query
   let query = supabase
@@ -24,7 +24,7 @@ export default async function StudentsPage({
       id, refresh_id, first_name, last_name, date_of_birth, gender,
       is_unenrolled, is_duplicate, school_student_id, created_at,
       guardians(first_name, last_name, email, phone),
-      enrollments(id, pack_code, grade, school_district, school_name, cycle_id)
+      enrollments(id, pack_code, grade, school_district, school_name, program_year_id)
     `
     )
     .order("refresh_id", { ascending: true });
@@ -85,19 +85,19 @@ export default async function StudentsPage({
     );
   }
 
-  if (cycleId) {
+  if (yearId) {
     filtered = filtered.filter((s) =>
       s.enrollments?.some(
-        (e: { cycle_id: string }) => e.cycle_id === cycleId
+        (e: { program_year_id: string }) => e.program_year_id === yearId
       )
     );
   }
 
-  // Fetch cycles for filter dropdown
-  const { data: cycles } = await supabase
-    .from("cycles")
-    .select("id, season, program_years(label)")
-    .order("created_at", { ascending: false });
+  // Fetch program years for filter dropdown
+  const { data: programYears } = await supabase
+    .from("program_years")
+    .select("id, label")
+    .order("label", { ascending: false });
 
   return (
     <div className="space-y-6">
@@ -109,13 +109,13 @@ export default async function StudentsPage({
       </div>
       <StudentList
         students={filtered}
-        cycles={cycles ?? []}
+        programYears={programYears ?? []}
         initialSearch={search}
         initialDistrict={district}
         initialPackCode={packCode}
         initialUnenrolled={unenrolled}
         initialDuplicate={duplicate}
-        initialCycle={cycleId}
+        initialYear={yearId}
       />
     </div>
   );

@@ -18,8 +18,7 @@ interface Enrollment {
   grade: string;
   school_name: string;
   pack_code: string;
-  cycle_id: string;
-  cycles: { season: string; program_years: { label: string } | null } | null;
+  program_years: { label: string } | null;
 }
 
 interface Student {
@@ -40,13 +39,6 @@ interface DuplicateItem {
   student: Student;
   matches: Student[];
 }
-
-const SEASON_LABELS: Record<string, string> = {
-  aug: "Aug",
-  nov: "Nov",
-  feb: "Feb",
-  may: "May",
-};
 
 export function DuplicateQueue({ items }: { items: DuplicateItem[] }) {
   const [processing, setProcessing] = useState<string | null>(null);
@@ -202,12 +194,10 @@ function StudentCard({
             <Row label="Grade" value={latestEnrollment.grade} />
             <Row label="School" value={latestEnrollment.school_name} />
             <Row label="Pack Code" value={latestEnrollment.pack_code} />
-            {latestEnrollment.cycles && (
+            {latestEnrollment.program_years && (
               <Row
-                label="Cycle"
-                value={`${latestEnrollment.cycles.program_years?.label ?? ""} ${
-                  SEASON_LABELS[latestEnrollment.cycles.season] ?? latestEnrollment.cycles.season
-                }`}
+                label="Year"
+                value={latestEnrollment.program_years.label}
               />
             )}
           </>

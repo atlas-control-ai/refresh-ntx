@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 interface Distribution {
   id: string;
+  season: string;
   method: string;
   completed: boolean;
   completed_at: string | null;
@@ -35,11 +36,7 @@ interface Enrollment {
   school_name: string;
   menstruation_preference: string | null;
   submitted_at: string;
-  cycles: {
-    season: string;
-    distribution_date: string | null;
-    program_years: { label: string } | null;
-  } | null;
+  program_years: { label: string } | null;
   distributions: Distribution[];
 }
 
@@ -74,10 +71,11 @@ interface Student {
   enrollments: Enrollment[];
 }
 
+const SEASONS = ["aug", "nov", "feb", "may"] as const;
 const SEASON_LABELS: Record<string, string> = {
-  aug: "August",
-  nov: "November",
-  feb: "February",
+  aug: "Aug",
+  nov: "Nov",
+  feb: "Feb",
   may: "May",
 };
 
@@ -92,14 +90,11 @@ export function StudentProfile({
   const [saving, setSaving] = useState(false);
   const [showUnenrollConfirm, setShowUnenrollConfirm] = useState(false);
 
-  // Edit state
   const [firstName, setFirstName] = useState(student.first_name);
   const [lastName, setLastName] = useState(student.last_name);
   const [dateOfBirth, setDateOfBirth] = useState(student.date_of_birth);
   const [gender, setGender] = useState(student.gender);
-  const [schoolStudentId, setSchoolStudentId] = useState(
-    student.school_student_id ?? ""
-  );
+  const [schoolStudentId, setSchoolStudentId] = useState(student.school_student_id ?? "");
   const [ethnicity, setEthnicity] = useState<string[]>(student.ethnicity);
   const [ethnicHair, setEthnicHair] = useState(student.ethnic_hair_preference);
   const [notes, setNotes] = useState(student.notes ?? "");
@@ -146,14 +141,9 @@ export function StudentProfile({
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/admin/students"
-              className="text-sm text-zinc-500 hover:text-zinc-700"
-            >
-              &larr; Students
-            </Link>
-          </div>
+          <Link href="/admin/students" className="text-sm text-zinc-500 hover:text-zinc-700">
+            &larr; Students
+          </Link>
           <h1 className="mt-2 text-2xl font-bold text-zinc-900">
             {student.first_name} {student.last_name}
           </h1>
@@ -161,13 +151,9 @@ export function StudentProfile({
             Refresh ID: <span className="font-mono font-medium">{student.refresh_id}</span>
           </p>
           <div className="mt-1 flex gap-2">
-            {student.is_unenrolled && (
-              <Badge variant="destructive">Unenrolled</Badge>
-            )}
+            {student.is_unenrolled && <Badge variant="destructive">Unenrolled</Badge>}
             {student.is_duplicate && (
-              <Badge variant="outline" className="border-amber-400 text-amber-700">
-                Possible Duplicate
-              </Badge>
+              <Badge variant="outline" className="border-amber-400 text-amber-700">Possible Duplicate</Badge>
             )}
           </div>
         </div>
@@ -175,43 +161,18 @@ export function StudentProfile({
           <div className="flex gap-2">
             {editing ? (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditing(false)}
-                >
-                  Cancel
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
                 <Button size="sm" onClick={handleSave} disabled={saving}>
                   {saving ? "Saving..." : "Save"}
                 </Button>
               </>
             ) : (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditing(true)}
-                >
-                  Edit
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>Edit</Button>
                 {student.is_unenrolled ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleReenroll}
-                    disabled={saving}
-                  >
-                    Re-enroll
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleReenroll} disabled={saving}>Re-enroll</Button>
                 ) : (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => setShowUnenrollConfirm(true)}
-                  >
-                    Unenroll
-                  </Button>
+                  <Button variant="destructive" size="sm" onClick={() => setShowUnenrollConfirm(true)}>Unenroll</Button>
                 )}
               </>
             )}
@@ -219,31 +180,16 @@ export function StudentProfile({
         )}
       </div>
 
-      {/* Unenroll confirmation */}
       {showUnenrollConfirm && (
         <div className="rounded-md border border-red-200 bg-red-50 p-4">
           <p className="text-sm font-medium text-red-800">
             Are you sure you want to unenroll {student.first_name} {student.last_name}?
           </p>
-          <p className="mt-1 text-sm text-red-600">
-            This will mark the student as withdrawn from the program.
-          </p>
           <div className="mt-3 flex gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleUnenroll}
-              disabled={saving}
-            >
+            <Button variant="destructive" size="sm" onClick={handleUnenroll} disabled={saving}>
               {saving ? "Processing..." : "Yes, Unenroll"}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowUnenrollConfirm(false)}
-            >
-              Cancel
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowUnenrollConfirm(false)}>Cancel</Button>
           </div>
         </div>
       )}
@@ -251,104 +197,42 @@ export function StudentProfile({
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Student Info */}
         <Card>
-          <CardHeader>
-            <CardTitle>Student Information</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Student Information</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             {editing ? (
               <>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <Label>First Name</Label>
-                    <Input
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label>Last Name</Label>
-                    <Input
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                    />
-                  </div>
+                  <div><Label>First Name</Label><Input value={firstName} onChange={(e) => setFirstName(e.target.value)} /></div>
+                  <div><Label>Last Name</Label><Input value={lastName} onChange={(e) => setLastName(e.target.value)} /></div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <Label>Date of Birth</Label>
-                    <Input
-                      type="date"
-                      value={dateOfBirth}
-                      onChange={(e) => setDateOfBirth(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label>Gender</Label>
-                    <select
-                      className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm"
-                      value={gender}
-                      onChange={(e) => setGender(e.target.value)}
-                    >
-                      {["Male", "Female", "Non-binary", "Prefer not to say"].map(
-                        (g) => (
-                          <option key={g} value={g}>
-                            {g}
-                          </option>
-                        )
-                      )}
+                  <div><Label>Date of Birth</Label><Input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} /></div>
+                  <div><Label>Gender</Label>
+                    <select className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm" value={gender} onChange={(e) => setGender(e.target.value)}>
+                      {["Male", "Female", "Non-binary", "Prefer not to say"].map((g) => (<option key={g} value={g}>{g}</option>))}
                     </select>
                   </div>
                 </div>
-                <div>
-                  <Label>Student ID</Label>
-                  <Input
-                    value={schoolStudentId}
-                    onChange={(e) => setSchoolStudentId(e.target.value)}
-                    placeholder="District-assigned ID (optional)"
-                  />
-                </div>
-                <div>
-                  <Label>Ethnicity</Label>
+                <div><Label>Student ID</Label><Input value={schoolStudentId} onChange={(e) => setSchoolStudentId(e.target.value)} placeholder="Optional" /></div>
+                <div><Label>Ethnicity</Label>
                   <div className="mt-1 flex flex-wrap gap-3">
                     {ETHNICITIES.map((eth) => (
                       <label key={eth} className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={ethnicity.includes(eth)}
-                          onCheckedChange={() => toggleEthnicity(eth)}
-                        />
-                        {eth}
+                        <Checkbox checked={ethnicity.includes(eth)} onCheckedChange={() => toggleEthnicity(eth)} />{eth}
                       </label>
                     ))}
                   </div>
                 </div>
-                <div>
-                  <Label>Extra moisturizing products</Label>
+                <div><Label>Extra moisturizing products</Label>
                   <div className="mt-1 flex gap-4">
-                    {[
-                      { label: "Yes", value: true },
-                      { label: "No", value: false },
-                    ].map((opt) => (
+                    {[{ label: "Yes", value: true }, { label: "No", value: false }].map((opt) => (
                       <label key={String(opt.value)} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          checked={ethnicHair === opt.value}
-                          onChange={() => setEthnicHair(opt.value)}
-                          className="accent-zinc-900"
-                        />
-                        {opt.label}
+                        <input type="radio" checked={ethnicHair === opt.value} onChange={() => setEthnicHair(opt.value)} className="accent-zinc-900" />{opt.label}
                       </label>
                     ))}
                   </div>
                 </div>
-                <div>
-                  <Label>Notes</Label>
-                  <Textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Internal notes..."
-                    rows={3}
-                  />
-                </div>
+                <div><Label>Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} /></div>
               </>
             ) : (
               <dl className="space-y-3 text-sm">
@@ -356,10 +240,7 @@ export function StudentProfile({
                 <InfoRow label="Gender" value={student.gender} />
                 <InfoRow label="Student ID" value={student.school_student_id ?? "N/A"} />
                 <InfoRow label="Ethnicity" value={student.ethnicity.join(", ")} />
-                <InfoRow
-                  label="Extra Moisturizing"
-                  value={student.ethnic_hair_preference ? "Yes" : "No"}
-                />
+                <InfoRow label="Extra Moisturizing" value={student.ethnic_hair_preference ? "Yes" : "No"} />
                 {student.notes && <InfoRow label="Notes" value={student.notes} />}
               </dl>
             )}
@@ -368,16 +249,11 @@ export function StudentProfile({
 
         {/* Guardian Info */}
         <Card>
-          <CardHeader>
-            <CardTitle>Guardian Contact</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Guardian Contact</CardTitle></CardHeader>
           <CardContent>
             {primaryGuardian ? (
               <dl className="space-y-3 text-sm">
-                <InfoRow
-                  label="Name"
-                  value={`${primaryGuardian.first_name} ${primaryGuardian.last_name}`}
-                />
+                <InfoRow label="Name" value={`${primaryGuardian.first_name} ${primaryGuardian.last_name}`} />
                 <InfoRow label="Email" value={primaryGuardian.email} />
                 <InfoRow label="Phone" value={primaryGuardian.phone} />
                 <InfoRow label="Zip Code" value={primaryGuardian.zip_code} />
@@ -392,60 +268,49 @@ export function StudentProfile({
 
       {/* Enrollment History */}
       <Card>
-        <CardHeader>
-          <CardTitle>Enrollment History</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Enrollment History</CardTitle></CardHeader>
         <CardContent>
           {student.enrollments.length === 0 ? (
             <p className="text-sm text-zinc-500">No enrollments.</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cycle</TableHead>
-                  <TableHead>Grade</TableHead>
-                  <TableHead>School</TableHead>
-                  <TableHead>Pack Code</TableHead>
-                  <TableHead>Pickup</TableHead>
-                  <TableHead>School Delivery</TableHead>
-                  <TableHead>Bin</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {student.enrollments.map((e) => {
-                  const pickup = e.distributions.find((d) => d.method === "pickup");
-                  const schoolDel = e.distributions.find(
-                    (d) => d.method === "school_delivery"
-                  );
-                  const bin = e.distributions.find((d) => d.method === "bin");
-
-                  return (
-                    <TableRow key={e.id}>
-                      <TableCell>
-                        {e.cycles?.program_years?.label}{" "}
-                        {SEASON_LABELS[e.cycles?.season ?? ""] ?? e.cycles?.season}
-                      </TableCell>
-                      <TableCell>{e.grade}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">
-                        {e.school_name}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{e.pack_code}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DistStatus dist={pickup} />
-                      </TableCell>
-                      <TableCell>
-                        <DistStatus dist={schoolDel} />
-                      </TableCell>
-                      <TableCell>
-                        <DistStatus dist={bin} />
-                      </TableCell>
+            student.enrollments.map((e) => (
+              <div key={e.id} className="mb-6 last:mb-0">
+                <div className="mb-2 flex items-center gap-3">
+                  <h3 className="font-medium">{e.program_years?.label ?? "Unknown Year"}</h3>
+                  <Badge variant="secondary">{e.pack_code}</Badge>
+                  <span className="text-sm text-zinc-500">Grade {e.grade} — {e.school_name}</span>
+                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Distribution</TableHead>
+                      <TableHead>Pickup</TableHead>
+                      <TableHead>School Delivery</TableHead>
+                      <TableHead>Bin</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {SEASONS.map((s) => (
+                      <TableRow key={s}>
+                        <TableCell className="font-medium">{SEASON_LABELS[s]}</TableCell>
+                        {["pickup", "school_delivery", "bin"].map((m) => {
+                          const dist = e.distributions.find((d) => d.season === s && d.method === m);
+                          return (
+                            <TableCell key={m}>
+                              {dist?.completed ? (
+                                <Badge className="bg-green-100 text-green-800">Done</Badge>
+                              ) : (
+                                <span className="text-zinc-300">—</span>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ))
           )}
         </CardContent>
       </Card>
@@ -459,14 +324,5 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <dt className="text-zinc-500">{label}</dt>
       <dd className="text-zinc-900">{value}</dd>
     </div>
-  );
-}
-
-function DistStatus({ dist }: { dist?: Distribution }) {
-  if (!dist) return <span className="text-zinc-300">—</span>;
-  return dist.completed ? (
-    <Badge className="bg-green-100 text-green-800">Done</Badge>
-  ) : (
-    <Badge variant="outline">Pending</Badge>
   );
 }

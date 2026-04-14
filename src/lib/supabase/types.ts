@@ -56,6 +56,7 @@ export type Database = {
           id: string
           method: string
           notes: string | null
+          season: string
         }
         Insert: {
           completed?: boolean
@@ -65,6 +66,7 @@ export type Database = {
           id?: string
           method: string
           notes?: string | null
+          season: string
         }
         Update: {
           completed?: boolean
@@ -74,6 +76,7 @@ export type Database = {
           id?: string
           method?: string
           notes?: string | null
+          season?: string
         }
         Relationships: [
           {
@@ -88,11 +91,12 @@ export type Database = {
       enrollments: {
         Row: {
           created_at: string
-          cycle_id: string
+          cycle_id: string | null
           grade: string
           id: string
           menstruation_preference: string | null
           pack_code: string
+          program_year_id: string
           school_district: string
           school_name: string
           student_id: string
@@ -100,11 +104,12 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          cycle_id: string
+          cycle_id?: string | null
           grade: string
           id?: string
           menstruation_preference?: string | null
           pack_code: string
+          program_year_id: string
           school_district: string
           school_name: string
           student_id: string
@@ -112,11 +117,12 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          cycle_id?: string
+          cycle_id?: string | null
           grade?: string
           id?: string
           menstruation_preference?: string | null
           pack_code?: string
+          program_year_id?: string
           school_district?: string
           school_name?: string
           student_id?: string
@@ -128,6 +134,13 @@ export type Database = {
             columns: ["cycle_id"]
             isOneToOne: false
             referencedRelation: "cycles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_program_year_id_fkey"
+            columns: ["program_year_id"]
+            isOneToOne: false
+            referencedRelation: "program_years"
             referencedColumns: ["id"]
           },
           {
@@ -191,18 +204,21 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_registration_open: boolean
           label: string
         }
         Insert: {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_registration_open?: boolean
           label: string
         }
         Update: {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_registration_open?: boolean
           label?: string
         }
         Relationships: []

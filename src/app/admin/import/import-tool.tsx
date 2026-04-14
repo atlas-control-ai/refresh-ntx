@@ -16,35 +16,24 @@ import {
 } from "@/components/ui/table";
 import { importBatch, resetRefreshIdSequence, type ImportResult } from "./actions";
 
-interface Cycle {
+interface ProgramYear {
   id: string;
-  season: string;
-  program_years: { label: string } | null;
+  label: string;
+  is_active: boolean;
 }
-
-const SEASON_LABELS: Record<string, string> = {
-  aug: "August",
-  nov: "November",
-  feb: "February",
-  may: "May",
-};
 
 const BATCH_SIZE = 20;
 
 type Step = "upload" | "preview" | "importing" | "done";
 
-export function ImportTool({ cycles }: { cycles: Cycle[] }) {
+export function ImportTool({ programYears }: { programYears: ProgramYear[] }) {
   const [step, setStep] = useState<Step>("upload");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [csvData, setCsvData] = useState<any[]>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [progress, setProgress] = useState({ processed: 0, total: 0 });
-
-  const augCycle = cycles.find((c) => c.season === "aug");
-  const novCycle = cycles.find((c) => c.season === "nov");
-  const febCycle = cycles.find((c) => c.season === "feb");
-  const mayCycle = cycles.find((c) => c.season === "may");
+  const [selectedYearId, setSelectedYearId] = useState(programYears.find((py) => py.is_active)?.id ?? programYears[0]?.id ?? "");
 
   const handleFileUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,13 +57,6 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
     setStep("importing");
     setProgress({ processed: 0, total: csvData.length });
 
-    const cycleIds = {
-      aug: augCycle?.id ?? "",
-      nov: novCycle?.id ?? "",
-      feb: febCycle?.id,
-      may: mayCycle?.id,
-    };
-
     const totals: ImportResult = {
       total: csvData.length,
       created: 0,
@@ -89,7 +71,7 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
       const batch = csvData.slice(i, i + BATCH_SIZE);
 
       try {
-        const batchResult = await importBatch(batch, cycleIds, i);
+        const batchResult = await importBatch(batch, selectedYearId, i);
         totals.created += batchResult.created;
         totals.duplicates += batchResult.duplicates;
         totals.skipped += batchResult.skipped;
@@ -126,17 +108,18 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label>Detected Cycles</Label>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {cycles.map((c) => (
-                <Badge key={c.id} variant="secondary">
-                  {c.program_years?.label} {SEASON_LABELS[c.season] ?? c.season}
-                </Badge>
+            <Label>Target Program Year</Label>
+            <select
+              className="mt-1 flex h-9 w-full max-w-sm rounded-md border border-zinc-200 bg-white px-3 text-sm"
+              value={selectedYearId}
+              onChange={(e) => setSelectedYearId(e.target.value)}
+            >
+              {programYears.map((py) => (
+                <option key={py.id} value={py.id}>
+                  {py.label} {py.is_active ? "(Active)" : ""}
+                </option>
               ))}
-            </div>
-            <p className="mt-1 text-xs text-zinc-500">
-              Distribution data will be imported into the matching season cycles.
-            </p>
+            </select>
           </div>
           <div>
             <Label>CSV File</Label>

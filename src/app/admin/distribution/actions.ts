@@ -5,21 +5,22 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function markDistribution(
   enrollmentId: string,
+  season: "aug" | "nov" | "feb" | "may",
   method: "pickup" | "school_delivery" | "bin",
   completed: boolean
 ) {
   const supabase = await createClient();
 
-  // Check if distribution record exists for this enrollment + method
+  // Check if distribution record exists for this enrollment + season + method
   const { data: existing } = await supabase
     .from("distributions")
     .select("id")
     .eq("enrollment_id", enrollmentId)
+    .eq("season", season)
     .eq("method", method)
     .single();
 
   if (existing) {
-    // Update existing record
     const { error } = await supabase
       .from("distributions")
       .update({
@@ -30,9 +31,9 @@ export async function markDistribution(
 
     if (error) return { error: error.message };
   } else {
-    // Create new record
     const { error } = await supabase.from("distributions").insert({
       enrollment_id: enrollmentId,
+      season,
       method,
       completed,
       completed_at: completed ? new Date().toISOString() : null,
@@ -45,6 +46,6 @@ export async function markDistribution(
   return { success: true };
 }
 
-export async function markPickup(enrollmentId: string) {
-  return markDistribution(enrollmentId, "pickup", true);
+export async function markPickup(enrollmentId: string, season: "aug" | "nov" | "feb" | "may") {
+  return markDistribution(enrollmentId, season, "pickup", true);
 }

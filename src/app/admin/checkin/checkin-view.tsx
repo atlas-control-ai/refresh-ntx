@@ -7,6 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { markPickup } from "@/app/admin/distribution/actions";
 
+const SEASON_LABELS: Record<string, string> = {
+  aug: "August",
+  nov: "November",
+  feb: "February",
+  may: "May",
+};
+
 interface Enrollment {
   id: string;
   pack_code: string;
@@ -20,13 +27,34 @@ interface Enrollment {
   };
   distributions: Array<{
     id: string;
+    season: string;
     method: string;
     completed: boolean;
     completed_at: string | null;
   }>;
 }
 
-export function CheckInView({ enrollments }: { enrollments: Enrollment[] }) {
+interface Cycle {
+  season: string;
+  distribution_date: string | null;
+}
+
+export function CheckInView({
+  enrollments,
+  cycles,
+}: {
+  enrollments: Enrollment[];
+  cycles: Cycle[];
+}) {
+  const seasons = ["aug", "nov", "feb", "may"] as const;
+  const [selectedSeason, setSelectedSeason] = useState<typeof seasons[number]>(() => {
+    // Default to the most recent season that has a distribution date
+    const withDates = cycles
+      .filter((c) => c.distribution_date)
+      .sort((a, b) => (b.distribution_date ?? "").localeCompare(a.distribution_date ?? ""));
+    return (withDates[0]?.season as typeof seasons[number]) ?? "aug";
+  });
+
   const [search, setSearch] = useState("");
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [justCheckedIn, setJustCheckedIn] = useState<Set<string>>(new Set());
@@ -45,22 +73,49 @@ export function CheckInView({ enrollments }: { enrollments: Enrollment[] }) {
 
   async function handlePickup(enrollmentId: string) {
     setProcessingId(enrollmentId);
-    const result = await markPickup(enrollmentId);
+    const result = await markPickup(enrollmentId, selectedSeason);
     if (result.success) {
-      setJustCheckedIn((prev) => new Set(prev).add(enrollmentId));
+      setJustCheckedIn((prev) => new Set(prev).add(`${enrollmentId}-${selectedSeason}`));
     }
     setProcessingId(null);
   }
 
   function isPickedUp(e: Enrollment) {
     return (
-      justCheckedIn.has(e.id) ||
-      e.distributions.some((d) => d.method === "pickup" && d.completed)
+      justCheckedIn.has(`${e.id}-${selectedSeason}`) ||
+      e.distributions.some(
+        (d) => d.season === selectedSeason && d.method === "pickup" && d.completed
+      )
     );
   }
 
   return (
     <div className="space-y-4">
+      {/* Season selector */}
+      <div className="grid grid-cols-4 gap-2">
+        {seasons.map((s) => {
+          const cycle = cycles.find((c) => c.season === s);
+          return (
+            <button
+              key={s}
+              onClick={() => setSelectedSeason(s)}
+              className={`rounded-md border p-2 text-center text-sm font-medium transition-colors ${
+                selectedSeason === s
+                  ? "border-zinc-900 bg-zinc-900 text-white"
+                  : "border-zinc-200 bg-white hover:bg-zinc-50"
+              }`}
+            >
+              {SEASON_LABELS[s]}
+              {cycle?.distribution_date && (
+                <div className="text-xs font-normal mt-0.5" style={selectedSeason === s ? { color: "rgba(255,255,255,0.7)" } : { color: "#71717a" }}>
+                  {new Date(cycle.distribution_date + "T12:00:00").toLocaleDateString()}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <Input
         placeholder="Type name or Refresh ID..."
         className="text-lg h-12"

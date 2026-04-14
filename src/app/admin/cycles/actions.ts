@@ -54,13 +54,13 @@ export async function setActiveYear(yearId: string) {
   return { success: true };
 }
 
-export async function toggleCycleOpen(cycleId: string, isOpen: boolean) {
+export async function toggleRegistrationOpen(yearId: string, isOpen: boolean) {
   const supabase = await createClient();
 
   const { error } = await supabase
-    .from("cycles")
-    .update({ is_open: isOpen })
-    .eq("id", cycleId);
+    .from("program_years")
+    .update({ is_registration_open: isOpen })
+    .eq("id", yearId);
 
   if (error) return { error: error.message };
 

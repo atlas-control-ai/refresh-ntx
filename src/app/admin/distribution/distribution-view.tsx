@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import { markDistribution } from "./actions";
 
 interface Distribution {
   id: string;
+  season: string;
   method: string;
   completed: boolean;
   completed_at: string | null;
@@ -29,7 +30,6 @@ interface Enrollment {
   grade: string;
   school_district: string;
   school_name: string;
-  student_id: string;
   students: {
     id: string;
     refresh_id: number;
@@ -39,57 +39,55 @@ interface Enrollment {
   distributions: Distribution[];
 }
 
-interface Cycle {
+interface ProgramYear {
   id: string;
-  season: string;
-  distribution_date: string | null;
-  is_open: boolean;
-  program_years: { label: string } | null;
+  label: string;
+  is_active: boolean;
 }
 
+const SEASONS = ["aug", "nov", "feb", "may"] as const;
 const SEASON_LABELS: Record<string, string> = {
-  aug: "August",
-  nov: "November",
-  feb: "February",
+  aug: "Aug",
+  nov: "Nov",
+  feb: "Feb",
   may: "May",
 };
 
 interface Props {
   enrollments: Enrollment[];
-  cycles: Cycle[];
-  selectedCycleId: string;
+  programYears: ProgramYear[];
+  selectedYearId: string;
+  distDates: Record<string, string | null>;
   isAdmin: boolean;
   search: string;
-  methodFilter: string;
+  seasonFilter: string;
 }
 
 export function DistributionView({
   enrollments,
-  cycles,
-  selectedCycleId,
-  isAdmin,
+  programYears,
+  selectedYearId,
+  distDates,
   search: initialSearch,
-  methodFilter: initialMethod,
+  seasonFilter: initialSeason,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState(initialSearch);
-  const [method, setMethod] = useState(initialMethod);
+  const [seasonFilter, setSeasonFilter] = useState(initialSeason);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   function navigate(overrides: Record<string, string> = {}) {
     const params = new URLSearchParams();
-    const values = { cycle: selectedCycleId, q: search, method, ...overrides };
+    const values = { year: selectedYearId, q: search, season: seasonFilter, ...overrides };
     Object.entries(values).forEach(([k, v]) => {
       if (v) params.set(k, v);
     });
-    startTransition(() => router.push(`${pathname}?${params.toString()}`));
+    router.push(`${pathname}?${params.toString()}`);
   }
 
   const filtered = useMemo(() => {
     let list = enrollments;
-
     if (search) {
       const q = search.toLowerCase();
       list = list.filter((e) => {
@@ -101,176 +99,161 @@ export function DistributionView({
         );
       });
     }
-
-    if (method) {
-      list = list.filter((e) => {
-        const dist = e.distributions.find((d) => d.method === method);
-        return dist ? !dist.completed : true; // Show those NOT yet completed for this method
-      });
-    }
-
     return list;
-  }, [enrollments, search, method]);
+  }, [enrollments, search]);
 
-  // Stats
+  // Stats per season
   const stats = useMemo(() => {
-    const total = enrollments.length;
-    const pickup = enrollments.filter((e) =>
-      e.distributions.some((d) => d.method === "pickup" && d.completed)
-    ).length;
-    const schoolDel = enrollments.filter((e) =>
-      e.distributions.some((d) => d.method === "school_delivery" && d.completed)
-    ).length;
-    const bin = enrollments.filter((e) =>
-      e.distributions.some((d) => d.method === "bin" && d.completed)
-    ).length;
-    return { total, pickup, schoolDel, bin };
+    const s: Record<string, { pickup: number; school: number; bin: number }> = {};
+    for (const season of SEASONS) {
+      s[season] = { pickup: 0, school: 0, bin: 0 };
+    }
+    for (const e of enrollments) {
+      for (const d of e.distributions) {
+        if (d.completed && s[d.season]) {
+          if (d.method === "pickup") s[d.season].pickup++;
+          else if (d.method === "school_delivery") s[d.season].school++;
+          else if (d.method === "bin") s[d.season].bin++;
+        }
+      }
+    }
+    return s;
   }, [enrollments]);
 
   async function handleToggle(
     enrollmentId: string,
-    distMethod: "pickup" | "school_delivery" | "bin",
+    season: "aug" | "nov" | "feb" | "may",
+    method: "pickup" | "school_delivery" | "bin",
     currentlyCompleted: boolean
   ) {
-    setUpdatingId(`${enrollmentId}-${distMethod}`);
-    await markDistribution(enrollmentId, distMethod, !currentlyCompleted);
+    const key = `${enrollmentId}-${season}-${method}`;
+    setUpdatingId(key);
+    await markDistribution(enrollmentId, season, method, !currentlyCompleted);
     setUpdatingId(null);
   }
 
-  function getDist(e: Enrollment, m: string): Distribution | undefined {
-    return e.distributions.find((d) => d.method === m);
+  function getDist(e: Enrollment, season: string, method: string): Distribution | undefined {
+    return e.distributions.find((d) => d.season === season && d.method === method);
   }
+
+  const activeSeason = seasonFilter || null;
 
   return (
     <div className="space-y-4">
-      {/* Cycle selector + stats */}
+      {/* Year selector + stats */}
       <div className="flex flex-wrap items-center gap-3">
         <select
           className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium"
-          value={selectedCycleId}
-          onChange={(e) => navigate({ cycle: e.target.value, q: "", method: "" })}
+          value={selectedYearId}
+          onChange={(e) => navigate({ year: e.target.value, q: "", season: "" })}
         >
-          {cycles.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.program_years?.label} {SEASON_LABELS[c.season] ?? c.season}
-              {c.is_open ? " (Open)" : ""}
+          {programYears.map((py) => (
+            <option key={py.id} value={py.id}>
+              {py.label} {py.is_active ? "(Active)" : ""}
             </option>
           ))}
         </select>
-
-        <div className="flex gap-4 text-sm text-zinc-500">
-          <span>Total: <strong className="text-zinc-900">{stats.total}</strong></span>
-          <span>Pickup: <strong className="text-green-700">{stats.pickup}</strong></span>
-          <span>School: <strong className="text-blue-700">{stats.schoolDel}</strong></span>
-          <span>Bin: <strong className="text-amber-700">{stats.bin}</strong></span>
-        </div>
+        <span className="text-sm text-zinc-500">
+          {enrollments.length} enrolled
+        </span>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <Input
-          placeholder="Search name, Refresh ID, school..."
-          className="max-w-sm"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select
-          className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm"
-          value={method}
-          onChange={(e) => setMethod(e.target.value)}
-        >
-          <option value="">All Methods</option>
-          <option value="pickup">Pickup (not completed)</option>
-          <option value="school_delivery">School Delivery (not completed)</option>
-          <option value="bin">Bin (not completed)</option>
-        </select>
+      {/* Season stats row */}
+      <div className="grid grid-cols-4 gap-3">
+        {SEASONS.map((s) => (
+          <button
+            key={s}
+            onClick={() => {
+              setSeasonFilter(seasonFilter === s ? "" : s);
+            }}
+            className={`rounded-md border p-3 text-center transition-colors ${
+              seasonFilter === s ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white hover:bg-zinc-50"
+            }`}
+          >
+            <p className="text-xs font-medium uppercase">{SEASON_LABELS[s]}</p>
+            <p className="text-xs text-zinc-500 mt-0.5" style={seasonFilter === s ? { color: "rgba(255,255,255,0.7)" } : {}}>
+              {distDates[s] ? new Date(distDates[s] + "T12:00:00").toLocaleDateString() : "No date"}
+            </p>
+            <div className="mt-1 flex justify-center gap-2 text-xs">
+              <span title="Pickup">P:{stats[s]?.pickup ?? 0}</span>
+              <span title="School">S:{stats[s]?.school ?? 0}</span>
+              <span title="Bin">B:{stats[s]?.bin ?? 0}</span>
+            </div>
+          </button>
+        ))}
       </div>
+
+      {/* Search */}
+      <Input
+        placeholder="Search name, Refresh ID, school..."
+        className="max-w-sm"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
       {/* Table */}
-      <div className={`rounded-md border bg-white ${isPending ? "opacity-50" : ""}`}>
+      <div className="rounded-md border bg-white overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-24">Refresh ID</TableHead>
+              <TableHead className="w-20">ID</TableHead>
               <TableHead>Student</TableHead>
-              <TableHead className="hidden md:table-cell">School</TableHead>
-              <TableHead>Pack</TableHead>
-              <TableHead className="text-center">Pickup</TableHead>
-              <TableHead className="text-center">School Delivery</TableHead>
-              <TableHead className="text-center">Bin</TableHead>
+              <TableHead className="hidden lg:table-cell">School</TableHead>
+              <TableHead className="w-16">Pack</TableHead>
+              {(activeSeason ? [activeSeason] : SEASONS).map((s) => (
+                <TableHead key={s} colSpan={3} className="text-center border-l">
+                  {SEASON_LABELS[s]}
+                  <div className="flex text-xs font-normal text-zinc-400 justify-center gap-2">
+                    <span>P</span><span>S</span><span>B</span>
+                  </div>
+                </TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-zinc-500">
-                  No enrollments found for this cycle.
+                <TableCell colSpan={20} className="h-24 text-center text-zinc-500">
+                  No enrollments found.
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((e) => {
-                const pickup = getDist(e, "pickup");
-                const schoolDel = getDist(e, "school_delivery");
-                const bin = getDist(e, "bin");
-
-                return (
-                  <TableRow key={e.id}>
-                    <TableCell className="font-mono text-sm">
-                      <Link
-                        href={`/admin/students/${e.students.id}`}
-                        className="text-zinc-900 hover:underline"
-                      >
-                        {e.students.refresh_id}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/admin/students/${e.students.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {e.students.first_name} {e.students.last_name}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-zinc-500">
-                      {e.school_name}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{e.pack_code}</Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <DistButton
-                        completed={pickup?.completed ?? false}
-                        loading={updatingId === `${e.id}-pickup`}
-                        onClick={() =>
-                          handleToggle(e.id, "pickup", pickup?.completed ?? false)
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <DistButton
-                        completed={schoolDel?.completed ?? false}
-                        loading={updatingId === `${e.id}-school_delivery`}
-                        onClick={() =>
-                          handleToggle(
-                            e.id,
-                            "school_delivery",
-                            schoolDel?.completed ?? false
-                          )
-                        }
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <DistButton
-                        completed={bin?.completed ?? false}
-                        loading={updatingId === `${e.id}-bin`}
-                        onClick={() =>
-                          handleToggle(e.id, "bin", bin?.completed ?? false)
-                        }
-                      />
-                    </TableCell>
-                  </TableRow>
-                );
-              })
+              filtered.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell className="font-mono text-sm">
+                    <Link href={`/admin/students/${e.students.id}`} className="hover:underline">
+                      {e.students.refresh_id}
+                    </Link>
+                  </TableCell>
+                  <TableCell>
+                    <Link href={`/admin/students/${e.students.id}`} className="font-medium hover:underline">
+                      {e.students.first_name} {e.students.last_name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell text-sm text-zinc-500">
+                    {e.school_name}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{e.pack_code}</Badge>
+                  </TableCell>
+                  {(activeSeason ? [activeSeason] : SEASONS).map((s) => {
+                    const season = s as "aug" | "nov" | "feb" | "may";
+                    return ["pickup", "school_delivery", "bin"].map((m) => {
+                      const dist = getDist(e, s, m);
+                      const key = `${e.id}-${s}-${m}`;
+                      return (
+                        <TableCell key={key} className="text-center px-1 border-l-0">
+                          <DistBtn
+                            completed={dist?.completed ?? false}
+                            loading={updatingId === key}
+                            onClick={() => handleToggle(e.id, season, m as "pickup" | "school_delivery" | "bin", dist?.completed ?? false)}
+                          />
+                        </TableCell>
+                      );
+                    });
+                  })}
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
@@ -279,28 +262,18 @@ export function DistributionView({
   );
 }
 
-function DistButton({
-  completed,
-  loading,
-  onClick,
-}: {
-  completed: boolean;
-  loading: boolean;
-  onClick: () => void;
-}) {
+function DistBtn({ completed, loading, onClick }: { completed: boolean; loading: boolean; onClick: () => void }) {
   return (
-    <Button
-      variant={completed ? "default" : "outline"}
-      size="sm"
-      className={`h-8 w-8 p-0 ${
+    <button
+      className={`h-6 w-6 rounded text-xs font-bold transition-colors ${
         completed
-          ? "bg-green-600 hover:bg-green-700 text-white"
-          : "hover:bg-zinc-100"
+          ? "bg-green-600 text-white"
+          : "border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-300"
       }`}
       onClick={onClick}
       disabled={loading}
     >
-      {loading ? "..." : completed ? "\u2713" : ""}
-    </Button>
+      {loading ? "·" : completed ? "✓" : ""}
+    </button>
   );
 }

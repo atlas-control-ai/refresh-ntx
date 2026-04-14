@@ -22,11 +22,10 @@ interface Enrollment {
   distributions: Array<{ method: string; completed: boolean }>;
 }
 
-interface Cycle {
+interface ProgramYear {
   id: string;
-  season: string;
-  is_open: boolean;
-  program_years: { label: string } | null;
+  label: string;
+  is_active: boolean;
 }
 
 const SEASON_LABELS: Record<string, string> = {
@@ -37,20 +36,20 @@ const SEASON_LABELS: Record<string, string> = {
 };
 
 export function ReportsView({
-  cycles,
-  defaultCycleId,
+  programYears,
+  defaultYearId,
   enrollmentData,
 }: {
-  cycles: Cycle[];
-  defaultCycleId: string;
+  programYears: ProgramYear[];
+  defaultYearId: string;
   enrollmentData: Enrollment[];
 }) {
   const router = useRouter();
-  const [cycleId, setCycleId] = useState(defaultCycleId);
+  const [yearId, setYearId] = useState(defaultYearId);
 
-  function changeCycle(id: string) {
-    setCycleId(id);
-    router.push(`/admin/reports?cycle=${id}`);
+  function changeYear(id: string) {
+    setYearId(id);
+    router.push(`/admin/reports?year=${id}`);
   }
 
   // Breakdowns
@@ -114,18 +113,17 @@ export function ReportsView({
       <div className="flex flex-wrap items-center gap-3">
         <select
           className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium"
-          value={cycleId}
-          onChange={(e) => changeCycle(e.target.value)}
+          value={yearId}
+          onChange={(e) => changeYear(e.target.value)}
         >
-          {cycles.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.program_years?.label} {SEASON_LABELS[c.season] ?? c.season}
-              {c.is_open ? " (Open)" : ""}
+          {programYears.map((py) => (
+            <option key={py.id} value={py.id}>
+              {py.label} {py.is_active ? "(Active)" : ""}
             </option>
           ))}
         </select>
 
-        <a href={`/api/export?type=enrollments&cycle=${cycleId}`} download>
+        <a href={`/api/export?type=enrollments&year=${yearId}`} download>
           <Button variant="outline" size="sm">
             Export Cycle to CSV
           </Button>

@@ -13,7 +13,6 @@ export type RegistrationResult = {
 export async function submitRegistration(
   formData: RegistrationFormData
 ): Promise<RegistrationResult> {
-  // Validate
   const parsed = registrationSchema.safeParse(formData);
   if (!parsed.success) {
     return { success: false, error: parsed.error.issues[0].message };
@@ -22,14 +21,15 @@ export async function submitRegistration(
   const data = parsed.data;
   const supabase = await createClient();
 
-  // 1. Check for open cycle
-  const { data: openCycle } = await supabase
-    .from("cycles")
+  // 1. Check for active program year with registration open
+  const { data: activeYear } = await supabase
+    .from("program_years")
     .select("id")
-    .eq("is_open", true)
+    .eq("is_active", true)
+    .eq("is_registration_open", true)
     .single();
 
-  if (!openCycle) {
+  if (!activeYear) {
     return { success: false, error: "Registration is currently closed." };
   }
 
@@ -60,7 +60,6 @@ export async function submitRegistration(
     );
 
   if (potentialDupes && potentialDupes.length > 0) {
-    // Check each potential match for 2+ matching signals
     for (const dupe of potentialDupes) {
       let signals = 0;
       if (
@@ -69,15 +68,9 @@ export async function submitRegistration(
       ) {
         signals++;
       }
-      if (dupe.date_of_birth === data.dateOfBirth) {
+      if (dupe.date_of_birth === data.dateOfBirth) signals++;
+      if (data.schoolStudentId && dupe.school_student_id === data.schoolStudentId)
         signals++;
-      }
-      if (
-        data.schoolStudentId &&
-        dupe.school_student_id === data.schoolStudentId
-      ) {
-        signals++;
-      }
 
       if (signals >= 2) {
         isDuplicate = true;
@@ -123,10 +116,10 @@ export async function submitRegistration(
     return { success: false, error: "Failed to save guardian information." };
   }
 
-  // 6. Insert enrollment
+  // 6. Insert enrollment for the program year (not a specific cycle)
   const { error: enrollmentError } = await supabase.from("enrollments").insert({
     student_id: student.id,
-    cycle_id: openCycle.id,
+    program_year_id: activeYear.id,
     pack_code: packCode,
     grade: data.grade,
     menstruation_preference:
@@ -134,7 +127,7 @@ export async function submitRegistration(
         ? data.menstruationPreference
         : null,
     school_district: data.schoolDistrict,
-    school_name: data.schoolName,
+    school_name: data.schoolDistrict === "Other" ? data.schoolName : data.schoolName,
   });
 
   if (enrollmentError) {

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type") ?? "students";
-  const cycleId = searchParams.get("cycle");
+  const yearId = searchParams.get("year");
 
   const supabase = await createClient();
 
@@ -90,17 +90,17 @@ export async function GET(request: Request) {
           esc(s.notes ?? ""),
         ].join(",") + "\n";
     }
-  } else if (type === "enrollments" && cycleId) {
+  } else if (type === "enrollments" && yearId) {
     const { data } = await supabase
       .from("enrollments")
       .select(
         `
         pack_code, grade, school_district, school_name, submitted_at,
         students!inner(refresh_id, first_name, last_name, gender, date_of_birth),
-        distributions(method, completed, completed_at)
+        distributions(season, method, completed, completed_at)
       `
       )
-      .eq("cycle_id", cycleId)
+      .eq("program_year_id", yearId)
       .order("school_name");
 
     const headers = [

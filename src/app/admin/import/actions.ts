@@ -151,7 +151,7 @@ function parseMenstruationPref(row: SpreadsheetRow): string | null {
 
 export async function importBatch(
   rows: SpreadsheetRow[],
-  cycleIds: { aug: string; nov: string; feb?: string; may?: string },
+  programYearId: string,
   batchOffset: number
 ): Promise<ImportResult> {
   const supabase = await createClient();
@@ -237,7 +237,7 @@ export async function importBatch(
         });
       }
 
-      // Create enrollments per cycle with distribution data
+      // Create one enrollment for the program year
       const schoolDistrict = row["School District"] || "Other";
       const schoolName = getSchoolName(row);
       const grade = row["Grade for the 2025 - 2026 School Year"] || "K";
@@ -249,17 +249,38 @@ export async function importBatch(
           : `${row["Submission Date"].replace(" ", "T")}Z`
         : new Date().toISOString();
 
-      const seasons = [
-        { key: "aug", cycleId: cycleIds.aug },
-        { key: "nov", cycleId: cycleIds.nov },
-        { key: "feb", cycleId: cycleIds.feb },
-        { key: "may", cycleId: cycleIds.may },
-      ] as const;
+      const { data: enrollment, error: enrollError } = await supabase
+        .from("enrollments")
+        .insert({
+          student_id: student.id,
+          program_year_id: programYearId,
+          pack_code: packCode,
+          grade,
+          menstruation_preference: menstruationPref,
+          school_district: schoolDistrict,
+          school_name: schoolName,
+          submitted_at: submittedAt,
+        })
+        .select("id")
+        .single();
 
-      for (const { key, cycleId } of seasons) {
-        if (!cycleId) continue;
+      if (enrollError || !enrollment) {
+        result.errors++;
+        result.errorMessages.push(`Row ${rowNum}: Enrollment: ${enrollError?.message ?? "unknown"}`);
+        continue;
+      }
 
-        // Check if there's any distribution activity for this season
+      // Insert distribution records for all 4 seasons
+      const distInserts: Array<{
+        enrollment_id: string;
+        season: string;
+        method: string;
+        completed: boolean;
+        completed_at: string | null;
+      }> = [];
+
+      const seasons = ["aug", "nov", "feb", "may"] as const;
+      for (const key of seasons) {
         const prefix = key.charAt(0).toUpperCase() + key.slice(1);
         const hasPickup = isTruthy(row[`${prefix} Pick Up`]);
         const hasSchoolDel = isTruthy(row[`${prefix} School Delivery`]);
@@ -268,40 +289,10 @@ export async function importBatch(
         const schoolDelTs = row[`${prefix} School Delivery Timestamp`];
         const binTs = row[`${prefix} Bin Timestamp`];
 
-        // Only create enrollment for Aug cycle (primary) or if there's distribution data for other cycles
-        const isPrimary = key === "aug";
-        const hasActivity = hasPickup || hasSchoolDel || hasBin || pickupTs || schoolDelTs || binTs;
-
-        if (!isPrimary && !hasActivity) continue;
-
-        const { data: enrollment, error: enrollError } = await supabase
-          .from("enrollments")
-          .insert({
-            student_id: student.id,
-            cycle_id: cycleId,
-            pack_code: packCode,
-            grade,
-            menstruation_preference: menstruationPref,
-            school_district: schoolDistrict,
-            school_name: schoolName,
-            submitted_at: submittedAt,
-          })
-          .select("id")
-          .single();
-
-        if (enrollError || !enrollment) continue;
-
-        // Insert distribution records
-        const distInserts: Array<{
-          enrollment_id: string;
-          method: string;
-          completed: boolean;
-          completed_at: string | null;
-        }> = [];
-
         if (hasPickup || pickupTs) {
           distInserts.push({
             enrollment_id: enrollment.id,
+            season: key,
             method: "pickup",
             completed: hasPickup || !!pickupTs,
             completed_at: parseTimestamp(pickupTs),
@@ -310,6 +301,7 @@ export async function importBatch(
         if (hasSchoolDel || schoolDelTs) {
           distInserts.push({
             enrollment_id: enrollment.id,
+            season: key,
             method: "school_delivery",
             completed: hasSchoolDel || !!schoolDelTs,
             completed_at: parseTimestamp(schoolDelTs),
@@ -318,15 +310,16 @@ export async function importBatch(
         if (hasBin || binTs) {
           distInserts.push({
             enrollment_id: enrollment.id,
+            season: key,
             method: "bin",
             completed: hasBin || !!binTs,
             completed_at: parseTimestamp(binTs),
           });
         }
+      }
 
-        if (distInserts.length > 0) {
-          await supabase.from("distributions").insert(distInserts);
-        }
+      if (distInserts.length > 0) {
+        await supabase.from("distributions").insert(distInserts);
       }
 
       result.created++;

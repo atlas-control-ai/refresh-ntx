@@ -4,14 +4,14 @@ import { RegistrationForm } from "./registration-form";
 export default async function RegisterPage() {
   const supabase = await createClient();
 
-  // Check if there's an open cycle
-  const { data: openCycle } = await supabase
-    .from("cycles")
-    .select("id, season, program_year_id, cycles_year:program_years(label)")
-    .eq("is_open", true)
+  // Check if registration is open for the active program year
+  const { data: activeYear } = await supabase
+    .from("program_years")
+    .select("id, label, is_registration_open")
+    .eq("is_active", true)
     .single();
 
-  if (!openCycle) {
+  if (!activeYear || !activeYear.is_registration_open) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
         <div className="text-center">
@@ -22,7 +22,7 @@ export default async function RegisterPage() {
             Registration is currently closed.
           </p>
           <p className="mt-2 text-sm text-zinc-500">
-            Please check back when the next cycle opens.
+            Please check back when registration opens for the next program year.
           </p>
         </div>
       </div>
@@ -43,7 +43,7 @@ export default async function RegisterPage() {
             Refresh North Texas
           </h1>
           <p className="mt-2 text-zinc-600">
-            Student Registration Form
+            Student Registration — {activeYear.label}
           </p>
         </div>
         <RegistrationForm schools={schools ?? []} />

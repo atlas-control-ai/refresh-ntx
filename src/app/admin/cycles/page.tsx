@@ -8,23 +8,21 @@ export default async function CyclesPage() {
     .from("program_years")
     .select(
       `
-      id, label, is_active, created_at,
+      id, label, is_active, is_registration_open, created_at,
       cycles(id, season, distribution_date, is_open, created_at)
     `
     )
     .order("label", { ascending: false });
 
-  // Get enrollment counts per cycle
-  const { data: enrollmentCounts } = await supabase
+  // Get enrollment counts per program year
+  const { data: enrollments } = await supabase
     .from("enrollments")
-    .select("cycle_id")
-    .then(({ data }) => {
-      const counts: Record<string, number> = {};
-      data?.forEach((e) => {
-        counts[e.cycle_id] = (counts[e.cycle_id] ?? 0) + 1;
-      });
-      return { data: counts };
-    });
+    .select("program_year_id");
+
+  const enrollmentCounts: Record<string, number> = {};
+  enrollments?.forEach((e) => {
+    enrollmentCounts[e.program_year_id] = (enrollmentCounts[e.program_year_id] ?? 0) + 1;
+  });
 
   return (
     <div className="space-y-6">
@@ -33,12 +31,19 @@ export default async function CyclesPage() {
           Cycle &amp; Program Year Management
         </h1>
         <p className="text-sm text-zinc-500">
-          Create program years, configure cycles, and control registration windows.
+          Create program years, set distribution dates, and control registration.
         </p>
       </div>
       <CycleManagement
-        programYears={programYears ?? []}
-        enrollmentCounts={enrollmentCounts ?? {}}
+        programYears={(programYears ?? []) as Array<{
+          id: string;
+          label: string;
+          is_active: boolean;
+          is_registration_open: boolean;
+          created_at: string;
+          cycles: Array<{ id: string; season: string; distribution_date: string | null; is_open: boolean; created_at: string }>;
+        }>}
+        enrollmentCounts={enrollmentCounts}
       />
     </div>
   );

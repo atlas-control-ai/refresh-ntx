@@ -4,20 +4,20 @@ import { ImportTool } from "./import-tool";
 export default async function ImportPage() {
   const supabase = await createClient();
 
-  const { data: cycles } = await supabase
-    .from("cycles")
-    .select("id, season, program_years(label)")
-    .order("created_at", { ascending: false });
+  const { data: programYears } = await supabase
+    .from("program_years")
+    .select("id, label, is_active")
+    .order("label", { ascending: false });
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-zinc-900">CSV Import</h1>
         <p className="text-sm text-zinc-500">
-          Import student data from an existing spreadsheet. Map CSV columns to the fields below.
+          Import student data from an existing spreadsheet.
         </p>
       </div>
-      <ImportTool cycles={cycles ?? []} />
+      <ImportTool programYears={programYears ?? []} />
     </div>
   );
 }
