@@ -9,14 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-
-const SEASONS = ["aug", "nov", "feb", "may"] as const;
-const SEASON_LABELS: Record<string, string> = {
-  aug: "August",
-  nov: "November",
-  feb: "February",
-  may: "May",
-};
+import { isDistributionCompleted, SEASONS, SEASON_LABELS } from "@/lib/types";
 
 export default async function AdminDashboard() {
   const supabase = await createClient();
@@ -32,6 +25,7 @@ export default async function AdminDashboard() {
     { count: totalStudents },
     { count: pendingDuplicates },
     { count: unenrolled },
+    { count: totalHouseholds },
   ] = await Promise.all([
     supabase.from("students").select("*", { count: "exact", head: true }),
     supabase
@@ -43,6 +37,7 @@ export default async function AdminDashboard() {
       .from("students")
       .select("*", { count: "exact", head: true })
       .eq("is_unenrolled", true),
+    supabase.from("households").select("*", { count: "exact", head: true }),
   ]);
 
   let enrolledThisYear = 0;
@@ -58,18 +53,18 @@ export default async function AdminDashboard() {
 
     const { data: enrollments } = await supabase
       .from("enrollments")
-      .select("id, distributions(season, method, completed)")
+      .select("id, distributions(season, status)")
       .eq("program_year_id", activeYear.id);
 
     if (enrollments) {
       for (const e of enrollments) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dists = (e as any).distributions as Array<{ season: string; method: string; completed: boolean }>;
+        const dists = (e as any).distributions as Array<{ season: string; status: string }>;
         for (const d of dists ?? []) {
-          if (d.completed && seasonStats[d.season]) {
-            if (d.method === "pickup") seasonStats[d.season].pickup++;
-            else if (d.method === "school_delivery") seasonStats[d.season].school++;
-            else if (d.method === "bin") seasonStats[d.season].bin++;
+          if (isDistributionCompleted(d.status) && seasonStats[d.season]) {
+            if (d.status === "picked_up") seasonStats[d.season].pickup++;
+            else if (d.status === "school_delivered") seasonStats[d.season].school++;
+            else if (d.status === "binned") seasonStats[d.season].bin++;
           }
         }
       }
@@ -89,6 +84,7 @@ export default async function AdminDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard title="Enrolled This Year" value={enrolledThisYear} description={activeYear?.label ?? ""} />
         <SummaryCard title="Total Students" value={totalStudents ?? 0} description="All-time registry" />
+        <SummaryCard title="Households" value={totalHouseholds ?? 0} description="Family groups" />
         <SummaryCard title="Pending Duplicates" value={pendingDuplicates ?? 0} description="Needs review" alert={(pendingDuplicates ?? 0) > 0} />
         <SummaryCard title="Unenrolled" value={unenrolled ?? 0} description="Withdrawn from program" />
       </div>

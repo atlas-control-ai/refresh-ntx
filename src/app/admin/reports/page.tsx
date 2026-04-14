@@ -25,9 +25,9 @@ export default async function ReportsPage({
       .from("enrollments")
       .select(
         `
-        pack_code, grade, school_district, school_name,
+        pack_code_calculated, pack_code_override, grade, school_district, school_name,
         students!inner(gender, ethnicity, date_of_birth),
-        distributions(season, method, completed)
+        distributions(season, status)
       `
       )
       .eq("program_year_id", selectedYearId);

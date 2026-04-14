@@ -18,6 +18,7 @@ export default async function StudentPage({
       `
       *,
       guardians(*),
+      households(id, primary_email, primary_phone),
       enrollments(
         *,
         program_years(label),
@@ -30,13 +31,32 @@ export default async function StudentPage({
 
   if (error || !student) notFound();
 
+  // Get siblings in same household
+  let siblings: Array<{ id: string; refresh_id: number; first_name: string; last_name: string }> = [];
+  if (student.household_id) {
+    const { data } = await supabase
+      .from("students")
+      .select("id, refresh_id, first_name, last_name")
+      .eq("household_id", student.household_id)
+      .neq("id", id);
+    siblings = data ?? [];
+  }
+
   // Sort enrollments by submitted_at descending
   student.enrollments?.sort(
     (a: { submitted_at: string }, b: { submitted_at: string }) =>
       new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
   );
 
+  // Get user email for verification attribution
+  const { data: { user } } = await supabase.auth.getUser();
+
   return (
-    <StudentProfile student={student} isAdmin={role === "admin"} />
+    <StudentProfile
+      student={student}
+      siblings={siblings}
+      isAdmin={role === "admin"}
+      currentUserEmail={user?.email ?? "admin"}
+    />
   );
 }

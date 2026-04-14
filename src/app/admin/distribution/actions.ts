@@ -2,50 +2,37 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import type { DistributionStatus } from "@/lib/types";
 
-export async function markDistribution(
-  enrollmentId: string,
-  season: "aug" | "nov" | "feb" | "may",
-  method: "pickup" | "school_delivery" | "bin",
-  completed: boolean
+export async function updateDistributionStatus(
+  distributionId: string,
+  status: DistributionStatus
 ) {
   const supabase = await createClient();
+  const completedStatuses = ["picked_up", "school_delivered", "binned"];
 
-  // Check if distribution record exists for this enrollment + season + method
-  const { data: existing } = await supabase
+  const { error } = await supabase
     .from("distributions")
-    .select("id")
-    .eq("enrollment_id", enrollmentId)
-    .eq("season", season)
-    .eq("method", method)
-    .single();
+    .update({
+      status,
+      completed_at: completedStatuses.includes(status) ? new Date().toISOString() : null,
+    })
+    .eq("id", distributionId);
 
-  if (existing) {
-    const { error } = await supabase
-      .from("distributions")
-      .update({
-        completed,
-        completed_at: completed ? new Date().toISOString() : null,
-      })
-      .eq("id", existing.id);
-
-    if (error) return { error: error.message };
-  } else {
-    const { error } = await supabase.from("distributions").insert({
-      enrollment_id: enrollmentId,
-      season,
-      method,
-      completed,
-      completed_at: completed ? new Date().toISOString() : null,
-    });
-
-    if (error) return { error: error.message };
-  }
-
+  if (error) return { error: error.message };
   revalidatePath("/admin/distribution");
   return { success: true };
 }
 
-export async function markPickup(enrollmentId: string, season: "aug" | "nov" | "feb" | "may") {
-  return markDistribution(enrollmentId, season, "pickup", true);
+export async function markPickup(enrollmentId: string, season: string) {
+  const supabase = await createClient();
+  const { data: dist } = await supabase
+    .from("distributions")
+    .select("id")
+    .eq("enrollment_id", enrollmentId)
+    .eq("season", season)
+    .single();
+
+  if (!dist) return { error: "Distribution record not found" };
+  return updateDistributionStatus(dist.id, "picked_up");
 }

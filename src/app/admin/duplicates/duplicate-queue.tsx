@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { confirmDuplicate, dismissDuplicate } from "./actions";
+import { effectivePackCode } from "@/lib/types";
 
 interface Guardian {
   first_name: string;
@@ -17,7 +18,8 @@ interface Guardian {
 interface Enrollment {
   grade: string;
   school_name: string;
-  pack_code: string;
+  pack_code_calculated: string;
+  pack_code_override: string | null;
   program_years: { label: string } | null;
 }
 
@@ -193,7 +195,7 @@ function StudentCard({
           <>
             <Row label="Grade" value={latestEnrollment.grade} />
             <Row label="School" value={latestEnrollment.school_name} />
-            <Row label="Pack Code" value={latestEnrollment.pack_code} />
+            <Row label="Pack Code" value={effectivePackCode(latestEnrollment)} />
             {latestEnrollment.program_years && (
               <Row
                 label="Year"

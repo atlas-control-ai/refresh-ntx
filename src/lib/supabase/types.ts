@@ -49,34 +49,31 @@ export type Database = {
       }
       distributions: {
         Row: {
-          completed: boolean
           completed_at: string | null
           created_at: string
           enrollment_id: string
           id: string
-          method: string
           notes: string | null
           season: string
+          status: string
         }
         Insert: {
-          completed?: boolean
           completed_at?: string | null
           created_at?: string
           enrollment_id: string
           id?: string
-          method: string
           notes?: string | null
           season: string
+          status?: string
         }
         Update: {
-          completed?: boolean
           completed_at?: string | null
           created_at?: string
           enrollment_id?: string
           id?: string
-          method?: string
           notes?: string | null
           season?: string
+          status?: string
         }
         Relationships: [
           {
@@ -95,7 +92,9 @@ export type Database = {
           grade: string
           id: string
           menstruation_preference: string | null
-          pack_code: string
+          pack_code_calculated: string
+          pack_code_override: string | null
+          pack_code_override_reason: string | null
           program_year_id: string
           school_district: string
           school_name: string
@@ -108,7 +107,9 @@ export type Database = {
           grade: string
           id?: string
           menstruation_preference?: string | null
-          pack_code: string
+          pack_code_calculated: string
+          pack_code_override?: string | null
+          pack_code_override_reason?: string | null
           program_year_id: string
           school_district: string
           school_name: string
@@ -121,7 +122,9 @@ export type Database = {
           grade?: string
           id?: string
           menstruation_preference?: string | null
-          pack_code?: string
+          pack_code_calculated?: string
+          pack_code_override?: string | null
+          pack_code_override_reason?: string | null
           program_year_id?: string
           school_district?: string
           school_name?: string
@@ -158,6 +161,7 @@ export type Database = {
           created_at: string
           email: string
           first_name: string
+          household_id: string | null
           id: string
           is_primary: boolean
           last_name: string
@@ -170,6 +174,7 @@ export type Database = {
           created_at?: string
           email: string
           first_name: string
+          household_id?: string | null
           id?: string
           is_primary?: boolean
           last_name: string
@@ -182,6 +187,7 @@ export type Database = {
           created_at?: string
           email?: string
           first_name?: string
+          household_id?: string | null
           id?: string
           is_primary?: boolean
           last_name?: string
@@ -191,6 +197,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "guardians_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "guardians_student_id_fkey"
             columns: ["student_id"]
             isOneToOne: false
@@ -198,6 +211,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      households: {
+        Row: {
+          created_at: string
+          id: string
+          primary_email: string
+          primary_phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          primary_email: string
+          primary_phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          primary_email?: string
+          primary_phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       program_years: {
         Row: {
@@ -253,6 +290,7 @@ export type Database = {
           ethnicity: string[]
           first_name: string
           gender: string
+          household_id: string | null
           id: string
           is_duplicate: boolean
           is_unenrolled: boolean
@@ -260,6 +298,9 @@ export type Database = {
           notes: string | null
           refresh_id: number
           school_student_id: string | null
+          student_id_trust_level: number
+          student_id_verified_at: string | null
+          student_id_verified_by: string | null
           unenrolled_at: string | null
           updated_at: string
         }
@@ -271,6 +312,7 @@ export type Database = {
           ethnicity?: string[]
           first_name: string
           gender: string
+          household_id?: string | null
           id?: string
           is_duplicate?: boolean
           is_unenrolled?: boolean
@@ -278,6 +320,9 @@ export type Database = {
           notes?: string | null
           refresh_id?: number
           school_student_id?: string | null
+          student_id_trust_level?: number
+          student_id_verified_at?: string | null
+          student_id_verified_by?: string | null
           unenrolled_at?: string | null
           updated_at?: string
         }
@@ -289,6 +334,7 @@ export type Database = {
           ethnicity?: string[]
           first_name?: string
           gender?: string
+          household_id?: string | null
           id?: string
           is_duplicate?: boolean
           is_unenrolled?: boolean
@@ -296,6 +342,9 @@ export type Database = {
           notes?: string | null
           refresh_id?: number
           school_student_id?: string | null
+          student_id_trust_level?: number
+          student_id_verified_at?: string | null
+          student_id_verified_by?: string | null
           unenrolled_at?: string | null
           updated_at?: string
         }
@@ -305,6 +354,13 @@ export type Database = {
             columns: ["duplicate_of_id"]
             isOneToOne: false
             referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "students_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
             referencedColumns: ["id"]
           },
         ]
@@ -335,8 +391,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_user_role: { Args: never; Returns: string }
-      reset_refresh_id_sequence: { Args: never; Returns: undefined }
+      get_user_role: { Args: Record<string, never>; Returns: string }
+      reset_refresh_id_sequence: { Args: Record<string, never>; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

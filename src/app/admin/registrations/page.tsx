@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { effectivePackCode } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -27,7 +28,7 @@ export default async function RegistrationsPage() {
       .from("enrollments")
       .select(
         `
-        id, pack_code, grade, school_name, submitted_at,
+        id, pack_code_calculated, pack_code_override, grade, school_name, submitted_at,
         students!inner(id, refresh_id, first_name, last_name, is_duplicate,
           guardians(first_name, last_name, email)
         )
@@ -88,7 +89,7 @@ export default async function RegistrationsPage() {
                   </TableCell>
                   <TableCell>{e.grade}</TableCell>
                   <TableCell className="hidden md:table-cell text-sm text-zinc-500">{e.school_name}</TableCell>
-                  <TableCell><Badge variant="secondary">{e.pack_code}</Badge></TableCell>
+                  <TableCell><Badge variant="secondary">{effectivePackCode(e)}</Badge></TableCell>
                   <TableCell className="text-sm text-zinc-500">
                     {new Date(e.submitted_at).toLocaleDateString()}
                   </TableCell>

@@ -35,9 +35,9 @@ export default async function DistributionPage({
       .from("enrollments")
       .select(
         `
-        id, pack_code, grade, school_district, school_name,
+        id, pack_code_calculated, pack_code_override, grade, school_district, school_name,
         students!inner(id, refresh_id, first_name, last_name),
-        distributions(id, season, method, completed, completed_at)
+        distributions(id, season, status, completed_at, notes)
       `
       )
       .eq("program_year_id", programYearId)

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { effectivePackCode } from "@/lib/types";
 import { StudentList } from "./student-list";
 
 export default async function StudentsPage({
@@ -24,7 +25,7 @@ export default async function StudentsPage({
       id, refresh_id, first_name, last_name, date_of_birth, gender,
       is_unenrolled, is_duplicate, school_student_id, created_at,
       guardians(first_name, last_name, email, phone),
-      enrollments(id, pack_code, grade, school_district, school_name, program_year_id)
+      enrollments(id, pack_code_calculated, pack_code_override, grade, school_district, school_name, program_year_id)
     `
     )
     .order("refresh_id", { ascending: true });
@@ -53,7 +54,8 @@ export default async function StudentsPage({
         (e: { school_name: string }) => e.school_name.toLowerCase().includes(q)
       );
       const packMatch = s.enrollments?.some(
-        (e: { pack_code: string }) => e.pack_code.toLowerCase() === q
+        (e: { pack_code_calculated: string; pack_code_override: string | null }) =>
+          effectivePackCode(e).toLowerCase() === q
       );
       const gradeMatch = s.enrollments?.some(
         (e: { grade: string }) => e.grade.toLowerCase() === q
@@ -80,7 +82,8 @@ export default async function StudentsPage({
   if (packCode) {
     filtered = filtered.filter((s) =>
       s.enrollments?.some(
-        (e: { pack_code: string }) => e.pack_code === packCode
+        (e: { pack_code_calculated: string; pack_code_override: string | null }) =>
+          effectivePackCode(e) === packCode
       )
     );
   }

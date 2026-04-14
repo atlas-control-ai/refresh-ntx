@@ -12,14 +12,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { effectivePackCode, isDistributionCompleted } from "@/lib/types";
 
 interface Enrollment {
-  pack_code: string;
+  pack_code_calculated: string;
+  pack_code_override: string | null;
   grade: string;
   school_district: string;
   school_name: string;
   students: { gender: string; ethnicity: string[]; date_of_birth: string };
-  distributions: Array<{ method: string; completed: boolean }>;
+  distributions: Array<{ season: string; status: string }>;
 }
 
 interface ProgramYear {
@@ -53,7 +55,7 @@ export function ReportsView({
   }
 
   // Breakdowns
-  const byPackCode = useMemo(() => countBy(enrollmentData, (e) => e.pack_code), [enrollmentData]);
+  const byPackCode = useMemo(() => countBy(enrollmentData, (e) => effectivePackCode(e)), [enrollmentData]);
   const byDistrict = useMemo(() => countBy(enrollmentData, (e) => e.school_district), [enrollmentData]);
   const bySchool = useMemo(() => countBy(enrollmentData, (e) => e.school_name), [enrollmentData]);
   const byGrade = useMemo(() => countBy(enrollmentData, (e) => e.grade), [enrollmentData]);
@@ -72,13 +74,13 @@ export function ReportsView({
   // Distribution completion
   const distReport = useMemo(() => {
     const pickup = enrollmentData.filter((e) =>
-      e.distributions.some((d) => d.method === "pickup" && d.completed)
+      e.distributions.some((d) => d.status === "picked_up")
     ).length;
     const school = enrollmentData.filter((e) =>
-      e.distributions.some((d) => d.method === "school_delivery" && d.completed)
+      e.distributions.some((d) => d.status === "school_delivered")
     ).length;
     const bin = enrollmentData.filter((e) =>
-      e.distributions.some((d) => d.method === "bin" && d.completed)
+      e.distributions.some((d) => d.status === "binned")
     ).length;
     return { pickup, school, bin, total: enrollmentData.length };
   }, [enrollmentData]);
@@ -91,11 +93,11 @@ export function ReportsView({
         map[e.school_name] = { total: 0, pickup: 0, school: 0, bin: 0 };
       }
       map[e.school_name].total++;
-      if (e.distributions.some((d) => d.method === "pickup" && d.completed))
+      if (e.distributions.some((d) => d.status === "picked_up"))
         map[e.school_name].pickup++;
-      if (e.distributions.some((d) => d.method === "school_delivery" && d.completed))
+      if (e.distributions.some((d) => d.status === "school_delivered"))
         map[e.school_name].school++;
-      if (e.distributions.some((d) => d.method === "bin" && d.completed))
+      if (e.distributions.some((d) => d.status === "binned"))
         map[e.school_name].bin++;
     }
     return Object.entries(map).sort((a, b) => b[1].total - a[1].total);

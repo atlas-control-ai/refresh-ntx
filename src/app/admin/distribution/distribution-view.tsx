@@ -14,19 +14,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { markDistribution } from "./actions";
+import { updateDistributionStatus } from "./actions";
+import {
+  STATUS_LABELS,
+  STATUS_COLORS,
+  isDistributionCompleted,
+  effectivePackCode,
+  SEASONS,
+  SEASON_SHORT,
+} from "@/lib/types";
+import type { DistributionStatus } from "@/lib/types";
 
 interface Distribution {
   id: string;
   season: string;
-  method: string;
-  completed: boolean;
+  status: string;
   completed_at: string | null;
+  notes: string | null;
 }
 
 interface Enrollment {
   id: string;
-  pack_code: string;
+  pack_code_calculated: string;
+  pack_code_override: string | null;
   grade: string;
   school_district: string;
   school_name: string;
@@ -45,13 +55,14 @@ interface ProgramYear {
   is_active: boolean;
 }
 
-const SEASONS = ["aug", "nov", "feb", "may"] as const;
-const SEASON_LABELS: Record<string, string> = {
-  aug: "Aug",
-  nov: "Nov",
-  feb: "Feb",
-  may: "May",
-};
+const ALL_STATUSES: DistributionStatus[] = [
+  "pending",
+  "picked_up",
+  "school_delivered",
+  "binned",
+  "not_fulfilled",
+  "exception",
+];
 
 interface Props {
   enrollments: Enrollment[];
@@ -102,38 +113,33 @@ export function DistributionView({
     return list;
   }, [enrollments, search]);
 
-  // Stats per season
+  // Stats per season — count by status
   const stats = useMemo(() => {
-    const s: Record<string, { pickup: number; school: number; bin: number }> = {};
+    const s: Record<string, Record<string, number>> = {};
     for (const season of SEASONS) {
-      s[season] = { pickup: 0, school: 0, bin: 0 };
+      s[season] = {};
+      for (const st of ALL_STATUSES) {
+        s[season][st] = 0;
+      }
     }
     for (const e of enrollments) {
       for (const d of e.distributions) {
-        if (d.completed && s[d.season]) {
-          if (d.method === "pickup") s[d.season].pickup++;
-          else if (d.method === "school_delivery") s[d.season].school++;
-          else if (d.method === "bin") s[d.season].bin++;
+        if (s[d.season]) {
+          s[d.season][d.status] = (s[d.season][d.status] ?? 0) + 1;
         }
       }
     }
     return s;
   }, [enrollments]);
 
-  async function handleToggle(
-    enrollmentId: string,
-    season: "aug" | "nov" | "feb" | "may",
-    method: "pickup" | "school_delivery" | "bin",
-    currentlyCompleted: boolean
-  ) {
-    const key = `${enrollmentId}-${season}-${method}`;
-    setUpdatingId(key);
-    await markDistribution(enrollmentId, season, method, !currentlyCompleted);
-    setUpdatingId(null);
+  function getDist(e: Enrollment, season: string): Distribution | undefined {
+    return e.distributions.find((d) => d.season === season);
   }
 
-  function getDist(e: Enrollment, season: string, method: string): Distribution | undefined {
-    return e.distributions.find((d) => d.season === season && d.method === method);
+  async function handleStatusChange(distId: string, newStatus: DistributionStatus) {
+    setUpdatingId(distId);
+    await updateDistributionStatus(distId, newStatus);
+    setUpdatingId(null);
   }
 
   const activeSeason = seasonFilter || null;
@@ -160,27 +166,29 @@ export function DistributionView({
 
       {/* Season stats row */}
       <div className="grid grid-cols-4 gap-3">
-        {SEASONS.map((s) => (
-          <button
-            key={s}
-            onClick={() => {
-              setSeasonFilter(seasonFilter === s ? "" : s);
-            }}
-            className={`rounded-md border p-3 text-center transition-colors ${
-              seasonFilter === s ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white hover:bg-zinc-50"
-            }`}
-          >
-            <p className="text-xs font-medium uppercase">{SEASON_LABELS[s]}</p>
-            <p className="text-xs text-zinc-500 mt-0.5" style={seasonFilter === s ? { color: "rgba(255,255,255,0.7)" } : {}}>
-              {distDates[s] ? new Date(distDates[s] + "T12:00:00").toLocaleDateString() : "No date"}
-            </p>
-            <div className="mt-1 flex justify-center gap-2 text-xs">
-              <span title="Pickup">P:{stats[s]?.pickup ?? 0}</span>
-              <span title="School">S:{stats[s]?.school ?? 0}</span>
-              <span title="Bin">B:{stats[s]?.bin ?? 0}</span>
-            </div>
-          </button>
-        ))}
+        {SEASONS.map((s) => {
+          const completed = (stats[s]?.picked_up ?? 0) + (stats[s]?.school_delivered ?? 0) + (stats[s]?.binned ?? 0);
+          const total = enrollments.length;
+          return (
+            <button
+              key={s}
+              onClick={() => {
+                setSeasonFilter(seasonFilter === s ? "" : s);
+              }}
+              className={`rounded-md border p-3 text-center transition-colors ${
+                seasonFilter === s ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 bg-white hover:bg-zinc-50"
+              }`}
+            >
+              <p className="text-xs font-medium uppercase">{SEASON_SHORT[s]}</p>
+              <p className="text-xs text-zinc-500 mt-0.5" style={seasonFilter === s ? { color: "rgba(255,255,255,0.7)" } : {}}>
+                {distDates[s] ? new Date(distDates[s] + "T12:00:00").toLocaleDateString() : "No date"}
+              </p>
+              <div className="mt-1 text-xs">
+                <span title="Completed">{completed}/{total}</span>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* Search */}
@@ -201,11 +209,8 @@ export function DistributionView({
               <TableHead className="hidden lg:table-cell">School</TableHead>
               <TableHead className="w-16">Pack</TableHead>
               {(activeSeason ? [activeSeason] : SEASONS).map((s) => (
-                <TableHead key={s} colSpan={3} className="text-center border-l">
-                  {SEASON_LABELS[s]}
-                  <div className="flex text-xs font-normal text-zinc-400 justify-center gap-2">
-                    <span>P</span><span>S</span><span>B</span>
-                  </div>
+                <TableHead key={s} className="text-center border-l">
+                  {SEASON_SHORT[s]}
                 </TableHead>
               ))}
             </TableRow>
@@ -234,23 +239,23 @@ export function DistributionView({
                     {e.school_name}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{e.pack_code}</Badge>
+                    <Badge variant="secondary">{effectivePackCode(e)}</Badge>
                   </TableCell>
                   {(activeSeason ? [activeSeason] : SEASONS).map((s) => {
-                    const season = s as "aug" | "nov" | "feb" | "may";
-                    return ["pickup", "school_delivery", "bin"].map((m) => {
-                      const dist = getDist(e, s, m);
-                      const key = `${e.id}-${s}-${m}`;
-                      return (
-                        <TableCell key={key} className="text-center px-1 border-l-0">
-                          <DistBtn
-                            completed={dist?.completed ?? false}
-                            loading={updatingId === key}
-                            onClick={() => handleToggle(e.id, season, m as "pickup" | "school_delivery" | "bin", dist?.completed ?? false)}
+                    const dist = getDist(e, s);
+                    return (
+                      <TableCell key={s} className="text-center px-1 border-l">
+                        {dist ? (
+                          <StatusDropdown
+                            dist={dist}
+                            loading={updatingId === dist.id}
+                            onStatusChange={(status) => handleStatusChange(dist.id, status)}
                           />
-                        </TableCell>
-                      );
-                    });
+                        ) : (
+                          <span className="text-xs text-zinc-300">--</span>
+                        )}
+                      </TableCell>
+                    );
                   })}
                 </TableRow>
               ))
@@ -262,18 +267,51 @@ export function DistributionView({
   );
 }
 
-function DistBtn({ completed, loading, onClick }: { completed: boolean; loading: boolean; onClick: () => void }) {
+function StatusDropdown({
+  dist,
+  loading,
+  onStatusChange,
+}: {
+  dist: Distribution;
+  loading: boolean;
+  onStatusChange: (status: DistributionStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (loading) {
+    return <span className="text-xs text-zinc-400">...</span>;
+  }
+
   return (
-    <button
-      className={`h-6 w-6 rounded text-xs font-bold transition-colors ${
-        completed
-          ? "bg-green-600 text-white"
-          : "border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-300"
-      }`}
-      onClick={onClick}
-      disabled={loading}
-    >
-      {loading ? "·" : completed ? "✓" : ""}
-    </button>
+    <div className="relative inline-block">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[dist.status] ?? "bg-zinc-100 text-zinc-600"}`}
+      >
+        {STATUS_LABELS[dist.status] ?? dist.status}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 mt-1 right-0 w-36 rounded-md border bg-white shadow-lg py-1">
+            {ALL_STATUSES.map((s) => (
+              <button
+                key={s}
+                className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-50 ${
+                  s === dist.status ? "font-semibold" : ""
+                }`}
+                onClick={() => {
+                  onStatusChange(s);
+                  setOpen(false);
+                }}
+              >
+                <span className={`inline-block w-2 h-2 rounded-full mr-2 ${STATUS_COLORS[s]?.split(" ")[0] ?? "bg-zinc-100"}`} />
+                {STATUS_LABELS[s]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

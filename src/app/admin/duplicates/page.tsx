@@ -12,7 +12,7 @@ export default async function DuplicatesPage() {
       id, refresh_id, first_name, last_name, date_of_birth, gender,
       school_student_id, notes, is_duplicate, duplicate_of_id, created_at,
       guardians(first_name, last_name, email, phone),
-      enrollments(grade, school_name, pack_code,
+      enrollments(grade, school_name, pack_code_calculated, pack_code_override,
         program_years(label)
       )
     `
@@ -51,7 +51,7 @@ export default async function DuplicatesPage() {
         id, refresh_id, first_name, last_name, date_of_birth, gender,
         school_student_id, notes, is_duplicate, duplicate_of_id, created_at,
         guardians(first_name, last_name, email, phone),
-        enrollments(grade, school_name, pack_code,
+        enrollments(grade, school_name, pack_code_calculated, pack_code_override,
           program_years(label)
         )
       `

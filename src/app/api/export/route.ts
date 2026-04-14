@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { effectivePackCode, isDistributionCompleted } from "@/lib/types";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
         refresh_id, first_name, last_name, date_of_birth, gender, ethnicity,
         ethnic_hair_preference, school_student_id, is_unenrolled, is_duplicate, notes,
         guardians(first_name, last_name, email, phone, zip_code, county),
-        enrollments(grade, pack_code, school_district, school_name, submitted_at,
+        enrollments(grade, pack_code_calculated, pack_code_override, school_district, school_name, submitted_at,
           cycles(season, program_years(label))
         )
       `
@@ -83,7 +84,7 @@ export async function GET(request: Request) {
           esc(guardian?.zip_code ?? ""),
           esc(guardian?.county ?? ""),
           esc(enrollment?.grade ?? ""),
-          esc(enrollment?.pack_code ?? ""),
+          esc(enrollment ? effectivePackCode(enrollment) : ""),
           esc(enrollment?.school_district ?? ""),
           esc(enrollment?.school_name ?? ""),
           esc(cycle ? `${cycle.program_years?.label ?? ""} ${cycle.season}` : ""),
@@ -95,9 +96,9 @@ export async function GET(request: Request) {
       .from("enrollments")
       .select(
         `
-        pack_code, grade, school_district, school_name, submitted_at,
+        pack_code_calculated, pack_code_override, grade, school_district, school_name, submitted_at,
         students!inner(refresh_id, first_name, last_name, gender, date_of_birth),
-        distributions(season, method, completed, completed_at)
+        distributions(season, status, completed_at)
       `
       )
       .eq("program_year_id", yearId)
@@ -123,9 +124,9 @@ export async function GET(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const e of (data ?? []) as any[]) {
-      const pickup = e.distributions?.find((d: { method: string }) => d.method === "pickup");
-      const schoolDel = e.distributions?.find((d: { method: string }) => d.method === "school_delivery");
-      const bin = e.distributions?.find((d: { method: string }) => d.method === "bin");
+      const pickup = e.distributions?.find((d: { status: string }) => d.status === "picked_up");
+      const schoolDel = e.distributions?.find((d: { status: string }) => d.status === "school_delivered");
+      const bin = e.distributions?.find((d: { status: string }) => d.status === "binned");
 
       csvContent +=
         [
@@ -135,12 +136,12 @@ export async function GET(request: Request) {
           e.students.gender,
           e.students.date_of_birth,
           e.grade,
-          e.pack_code,
+          effectivePackCode(e),
           esc(e.school_district),
           esc(e.school_name),
-          pickup?.completed ? "Yes" : "No",
-          schoolDel?.completed ? "Yes" : "No",
-          bin?.completed ? "Yes" : "No",
+          pickup ? "Yes" : "No",
+          schoolDel ? "Yes" : "No",
+          bin ? "Yes" : "No",
           e.submitted_at?.substring(0, 10) ?? "",
         ].join(",") + "\n";
     }

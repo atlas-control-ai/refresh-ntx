@@ -14,10 +14,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DISTRICTS } from "@/lib/schemas/registration";
+import { effectivePackCode } from "@/lib/types";
 
 interface Enrollment {
   id: string;
-  pack_code: string;
+  pack_code_calculated: string;
+  pack_code_override: string | null;
   grade: string;
   school_district: string;
   school_name: string;
@@ -237,7 +239,7 @@ export function StudentList({
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
-                        {latestEnrollment?.pack_code ?? "-"}
+                        {latestEnrollment ? effectivePackCode(latestEnrollment) : "-"}
                       </Badge>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-sm text-zinc-500">

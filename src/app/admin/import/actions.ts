@@ -189,6 +189,33 @@ export async function importBatch(
       const isUnenrolled = isTruthy(row["Unenrolled"]);
       const refreshId = parseInt(row["Refresh ID"], 10) || undefined;
 
+      // Look up or create household by guardian email
+      let householdId: string | null = null;
+      const guardianEmail = row["Email"]?.trim();
+      if (guardianEmail) {
+        const { data: existingHousehold } = await supabase
+          .from("households")
+          .select("id")
+          .eq("primary_email", guardianEmail)
+          .maybeSingle();
+
+        if (existingHousehold) {
+          householdId = existingHousehold.id;
+        } else {
+          const guardianFirst = row["Parent or Guardian's Name  - First Name"]?.trim() || "";
+          const guardianLast = row["Parent or Guardian's Name  - Last Name"]?.trim() || "";
+          const { data: newHousehold } = await supabase
+            .from("households")
+            .insert({
+              primary_email: guardianEmail,
+              primary_phone: row["Cell Phone Number"]?.trim() || null,
+            })
+            .select("id")
+            .single();
+          householdId = newHousehold?.id ?? null;
+        }
+      }
+
       // Insert student
       const { data: student, error: studentError } = await supabase
         .from("students")
@@ -207,6 +234,7 @@ export async function importBatch(
             : null,
           notes: row["Notes"]?.trim() || null,
           ...(refreshId ? { refresh_id: refreshId } : {}),
+          ...(householdId ? { household_id: householdId } : {}),
         })
         .select("id, refresh_id")
         .single();
@@ -234,6 +262,7 @@ export async function importBatch(
           zip_code: row["Your Zip Code"]?.trim() || "",
           county: row["Your County"]?.trim() || "",
           is_primary: true,
+          ...(householdId ? { household_id: householdId } : {}),
         });
       }
 
@@ -254,7 +283,7 @@ export async function importBatch(
         .insert({
           student_id: student.id,
           program_year_id: programYearId,
-          pack_code: packCode,
+          pack_code_calculated: packCode,
           grade,
           menstruation_preference: menstruationPref,
           school_district: schoolDistrict,
@@ -270,15 +299,8 @@ export async function importBatch(
         continue;
       }
 
-      // Insert distribution records for all 4 seasons
-      const distInserts: Array<{
-        enrollment_id: string;
-        season: string;
-        method: string;
-        completed: boolean;
-        completed_at: string | null;
-      }> = [];
-
+      // Trigger auto-creates distributions for all 4 seasons with status "pending".
+      // Update the auto-created distributions with correct status from spreadsheet data.
       const seasons = ["aug", "nov", "feb", "may"] as const;
       for (const key of seasons) {
         const prefix = key.charAt(0).toUpperCase() + key.slice(1);
@@ -289,37 +311,30 @@ export async function importBatch(
         const schoolDelTs = row[`${prefix} School Delivery Timestamp`];
         const binTs = row[`${prefix} Bin Timestamp`];
 
-        if (hasPickup || pickupTs) {
-          distInserts.push({
-            enrollment_id: enrollment.id,
-            season: key,
-            method: "pickup",
-            completed: hasPickup || !!pickupTs,
-            completed_at: parseTimestamp(pickupTs),
-          });
-        }
-        if (hasSchoolDel || schoolDelTs) {
-          distInserts.push({
-            enrollment_id: enrollment.id,
-            season: key,
-            method: "school_delivery",
-            completed: hasSchoolDel || !!schoolDelTs,
-            completed_at: parseTimestamp(schoolDelTs),
-          });
-        }
-        if (hasBin || binTs) {
-          distInserts.push({
-            enrollment_id: enrollment.id,
-            season: key,
-            method: "bin",
-            completed: hasBin || !!binTs,
-            completed_at: parseTimestamp(binTs),
-          });
-        }
-      }
+        let newStatus: string | null = null;
+        let completedAt: string | null = null;
 
-      if (distInserts.length > 0) {
-        await supabase.from("distributions").insert(distInserts);
+        if (hasPickup || pickupTs) {
+          newStatus = "picked_up";
+          completedAt = parseTimestamp(pickupTs);
+        } else if (hasSchoolDel || schoolDelTs) {
+          newStatus = "school_delivered";
+          completedAt = parseTimestamp(schoolDelTs);
+        } else if (hasBin || binTs) {
+          newStatus = "binned";
+          completedAt = parseTimestamp(binTs);
+        }
+
+        if (newStatus) {
+          await supabase
+            .from("distributions")
+            .update({
+              status: newStatus,
+              completed_at: completedAt,
+            })
+            .eq("enrollment_id", enrollment.id)
+            .eq("season", key);
+        }
       }
 
       result.created++;

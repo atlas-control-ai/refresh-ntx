@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { markPickup } from "@/app/admin/distribution/actions";
+import { isDistributionCompleted, effectivePackCode } from "@/lib/types";
 
 const SEASON_LABELS: Record<string, string> = {
   aug: "August",
@@ -16,7 +17,8 @@ const SEASON_LABELS: Record<string, string> = {
 
 interface Enrollment {
   id: string;
-  pack_code: string;
+  pack_code_calculated: string;
+  pack_code_override: string | null;
   grade: string;
   school_name: string;
   students: {
@@ -28,8 +30,7 @@ interface Enrollment {
   distributions: Array<{
     id: string;
     season: string;
-    method: string;
-    completed: boolean;
+    status: string;
     completed_at: string | null;
   }>;
 }
@@ -84,7 +85,7 @@ export function CheckInView({
     return (
       justCheckedIn.has(`${e.id}-${selectedSeason}`) ||
       e.distributions.some(
-        (d) => d.season === selectedSeason && d.method === "pickup" && d.completed
+        (d) => d.season === selectedSeason && isDistributionCompleted(d.status)
       )
     );
   }
@@ -143,7 +144,7 @@ export function CheckInView({
                   </p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
                     <span className="font-mono">ID: {e.students.refresh_id}</span>
-                    <Badge variant="secondary">{e.pack_code}</Badge>
+                    <Badge variant="secondary">{effectivePackCode(e)}</Badge>
                     <span>Grade {e.grade}</span>
                     <span className="hidden sm:inline">— {e.school_name}</span>
                   </div>
