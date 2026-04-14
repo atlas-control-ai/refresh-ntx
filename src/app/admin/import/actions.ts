@@ -1,225 +1,339 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { calculatePackCode } from "@/lib/pack-code";
-
-export interface ImportRow {
-  // Guardian
-  guardianFirstName: string;
-  guardianLastName: string;
-  email: string;
-  phone: string;
-  zipCode: string;
-  county: string;
-  // Child
-  childFirstName: string;
-  childLastName: string;
-  dateOfBirth: string;
-  schoolStudentId: string;
-  grade: string;
-  gender: string;
-  ethnicity: string;
-  ethnicHairPreference: string;
-  menstruationPreference: string;
-  // School
-  schoolDistrict: string;
-  schoolName: string;
-  // Distribution
-  packCode: string;
-  pickupCompleted: string;
-  pickupDate: string;
-  schoolDeliveryCompleted: string;
-  schoolDeliveryDate: string;
-  binCompleted: string;
-  binDate: string;
-  // Meta
-  submittedAt: string;
-}
 
 export interface ImportResult {
   total: number;
   created: number;
   duplicates: number;
+  skipped: number;
   errors: number;
   errorMessages: string[];
 }
 
-export async function importCSVData(
-  rows: ImportRow[],
-  cycleId: string
+// Maps the actual spreadsheet columns
+interface SpreadsheetRow {
+  "Submission Date": string;
+  "Parent or Guardian's Name  - First Name": string;
+  "Parent or Guardian's Name  - Last Name": string;
+  "Email": string;
+  "Cell Phone Number": string;
+  "Child's Name - First Name": string;
+  "Child's Name - Last Name": string;
+  "Student ID": string;
+  "Child's Date of Birth": string;
+  "Grade for the 2025 - 2026 School Year": string;
+  "School District": string;
+  "Frisco ISD Schools": string;
+  "Little Elm ISD Schools": string;
+  "Denton ISD Schools": string;
+  "North Texas Collegiate Academy": string;
+  "Other Schools": string;
+  "Does this child prefer extra moisturizing products for coarse/coily hair?": string;
+  "Product Preference": string;
+  "Menstruation Product Preference": string;
+  "Your Zip Code": string;
+  "Your County": string;
+  "Gender of Child": string;
+  "Ethnicity of Child (Select all that apply)": string;
+  "Pack Code": string;
+  "Refresh ID": string;
+  "Notes": string;
+  "Possible Student Name Duplicates": string;
+  "Aug Pick Up": string;
+  "Nov Pick Up": string;
+  "Feb Pick Up": string;
+  "May Pick Up": string;
+  "Aug Pickup Timestamp": string;
+  "Nov Pickup Timestamp": string;
+  "Feb Pickup Timestamp": string;
+  "May Pickup Timestamp": string;
+  "Aug School Delivery": string;
+  "Nov School Delivery": string;
+  "Feb School Delivery": string;
+  "May School Delivery": string;
+  "Aug School Delivery Timestamp": string;
+  "Nov School Delivery Timestamp": string;
+  "Feb School Delivery Timestamp": string;
+  "May School Delivery Timestamp": string;
+  "Aug Bin": string;
+  "Nov Bin": string;
+  "Feb Bin": string;
+  "May Bin": string;
+  "Aug Bin Timestamp": string;
+  "Nov Bin Timestamp": string;
+  "Feb Bin Timestamp": string;
+  "May Bin Timestamp": string;
+  "Unenrolled": string;
+  "Unenrolled Timestamp": string;
+  "Duplicate": string;
+  [key: string]: string;
+}
+
+function parseDate(dateStr: string): string {
+  if (!dateStr) return "2010-01-01";
+  // Handle MM-DD-YYYY format
+  const mdyMatch = dateStr.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (mdyMatch) {
+    return `${mdyMatch[3]}-${mdyMatch[1].padStart(2, "0")}-${mdyMatch[2].padStart(2, "0")}`;
+  }
+  // Handle MM/DD/YYYY
+  const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    return `${slashMatch[3]}-${slashMatch[1].padStart(2, "0")}-${slashMatch[2].padStart(2, "0")}`;
+  }
+  // Handle YYYY-MM-DD already
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    return dateStr.substring(0, 10);
+  }
+  return "2010-01-01";
+}
+
+function parseTimestamp(dateStr: string): string | null {
+  if (!dateStr) return null;
+  // Handle M/D/YYYY or MM/DD/YYYY
+  const match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (match) {
+    return `${match[3]}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}T00:00:00Z`;
+  }
+  // Handle YYYY-MM-DD with optional time
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    return dateStr.includes("T") ? dateStr : `${dateStr}T00:00:00Z`;
+  }
+  return null;
+}
+
+function isTruthy(val: string): boolean {
+  return val?.toUpperCase() === "TRUE" || val?.toLowerCase() === "yes";
+}
+
+function getSchoolName(row: SpreadsheetRow): string {
+  const district = row["School District"] || "";
+  if (district === "Frisco ISD" && row["Frisco ISD Schools"])
+    return row["Frisco ISD Schools"];
+  if (district === "Little Elm ISD" && row["Little Elm ISD Schools"])
+    return row["Little Elm ISD Schools"];
+  if (district === "Denton ISD" && row["Denton ISD Schools"])
+    return row["Denton ISD Schools"];
+  if (district.includes("Collegiate") && row["North Texas Collegiate Academy"])
+    return row["North Texas Collegiate Academy"];
+  if (row["Other Schools"]) return row["Other Schools"];
+  // Fallback: check all school columns
+  return (
+    row["Frisco ISD Schools"] ||
+    row["Little Elm ISD Schools"] ||
+    row["Denton ISD Schools"] ||
+    row["North Texas Collegiate Academy"] ||
+    row["Other Schools"] ||
+    "Unknown"
+  );
+}
+
+function parseGender(row: SpreadsheetRow): string {
+  const gender = row["Gender of Child"] || "";
+  if (gender === "Male" || gender === "Female") return gender;
+  if (gender === "Non-binary") return "Non-binary";
+  // Also parse from Product Preference
+  const pref = row["Product Preference"] || "";
+  if (pref.toLowerCase().includes("male") && !pref.toLowerCase().includes("female"))
+    return "Male";
+  if (pref.toLowerCase().includes("female")) return "Female";
+  return gender || "Prefer not to say";
+}
+
+function parseMenstruationPref(row: SpreadsheetRow): string | null {
+  const pref = row["Menstruation Product Preference"] || "";
+  if (pref === "Pads" || pref.toLowerCase().includes("pad")) return "Pads";
+  if (pref === "Tampons" || pref.toLowerCase().includes("tampon")) return "Tampons";
+  if (pref === "None" || pref.toLowerCase().includes("none")) return "None";
+  return null;
+}
+
+export async function importSpreadsheet(
+  rows: SpreadsheetRow[],
+  cycleIds: { aug: string; nov: string; feb?: string; may?: string }
 ): Promise<ImportResult> {
   const supabase = await createClient();
   const result: ImportResult = {
     total: rows.length,
     created: 0,
     duplicates: 0,
+    skipped: 0,
     errors: 0,
     errorMessages: [],
   };
 
+  // First, reset the refresh_id sequence to accommodate imported IDs
+  // Find the max Refresh ID in the CSV
+  let maxRefreshId = 1000;
+  for (const row of rows) {
+    const rid = parseInt(row["Refresh ID"], 10);
+    if (!isNaN(rid) && rid > maxRefreshId) maxRefreshId = rid;
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const rowNum = i + 2; // +2 for header row + 0-index
+    const rowNum = i + 2;
 
     try {
-      if (!row.childFirstName || !row.childLastName) {
-        result.errors++;
-        result.errorMessages.push(`Row ${rowNum}: Missing child name`);
+      const firstName = row["Child's Name - First Name"]?.trim();
+      const lastName = row["Child's Name - Last Name"]?.trim();
+
+      if (!firstName || !lastName) {
+        result.skipped++;
         continue;
       }
 
-      // Parse ethnicity — could be comma-separated
-      const ethnicityArray = row.ethnicity
-        ? row.ethnicity.split(",").map((e) => e.trim()).filter(Boolean)
-        : [];
-
-      const ethnicHair =
-        row.ethnicHairPreference?.toLowerCase() === "yes" ||
-        row.ethnicHairPreference?.toLowerCase() === "true";
-
-      // Duplicate detection
-      let isDuplicate = false;
-      let duplicateNotes = "";
-
-      if (row.childFirstName && row.childLastName && row.dateOfBirth) {
-        const { data: potentialDupes } = await supabase
-          .from("students")
-          .select("id, first_name, last_name, date_of_birth, school_student_id, refresh_id")
-          .ilike("first_name", row.childFirstName)
-          .ilike("last_name", row.childLastName);
-
-        if (potentialDupes) {
-          for (const dupe of potentialDupes) {
-            let signals = 0;
-            if (
-              dupe.first_name.toLowerCase() === row.childFirstName.toLowerCase() &&
-              dupe.last_name.toLowerCase() === row.childLastName.toLowerCase()
-            )
-              signals++;
-            if (dupe.date_of_birth === row.dateOfBirth) signals++;
-            if (row.schoolStudentId && dupe.school_student_id === row.schoolStudentId)
-              signals++;
-
-            if (signals >= 2) {
-              isDuplicate = true;
-              duplicateNotes += `Import match: ${dupe.first_name} ${dupe.last_name} (Refresh ID: ${dupe.refresh_id}). `;
-            }
-          }
-        }
-      }
-
-      if (isDuplicate) result.duplicates++;
-
-      // Calculate pack code (use provided one if available, otherwise calculate)
-      const gradeForCode = row.grade === "K" ? "0" : row.grade;
-      const packCode =
-        row.packCode ||
-        calculatePackCode(
-          gradeForCode,
-          row.gender,
-          ethnicHair,
-          row.gender === "Female" && row.menstruationPreference
-            ? (row.menstruationPreference as "Pads" | "Tampons" | "None")
-            : null
-        );
+      const gender = parseGender(row);
+      const ethnicHair = isTruthy(
+        row["Does this child prefer extra moisturizing products for coarse/coily hair?"]
+      );
+      const ethnicity = (row["Ethnicity of Child (Select all that apply)"] || "")
+        .split(";")
+        .map((e) => e.trim())
+        .filter(Boolean);
+      const isDuplicate = isTruthy(row["Duplicate"]);
+      const isUnenrolled = isTruthy(row["Unenrolled"]);
+      const refreshId = parseInt(row["Refresh ID"], 10) || undefined;
 
       // Insert student
       const { data: student, error: studentError } = await supabase
         .from("students")
         .insert({
-          first_name: row.childFirstName,
-          last_name: row.childLastName,
-          date_of_birth: row.dateOfBirth || "2010-01-01",
-          school_student_id: row.schoolStudentId || null,
-          gender: row.gender || "Prefer not to say",
-          ethnicity: ethnicityArray,
+          first_name: firstName,
+          last_name: lastName,
+          date_of_birth: parseDate(row["Child's Date of Birth"]),
+          school_student_id: row["Student ID"]?.trim() || null,
+          gender,
+          ethnicity,
           ethnic_hair_preference: ethnicHair,
           is_duplicate: isDuplicate,
-          notes: isDuplicate ? duplicateNotes.trim() : null,
+          is_unenrolled: isUnenrolled,
+          unenrolled_at: isUnenrolled && row["Unenrolled Timestamp"]
+            ? parseTimestamp(row["Unenrolled Timestamp"])
+            : null,
+          notes: row["Notes"]?.trim() || null,
+          ...(refreshId ? { refresh_id: refreshId } : {}),
         })
-        .select("id")
+        .select("id, refresh_id")
         .single();
 
       if (studentError) {
         result.errors++;
-        result.errorMessages.push(`Row ${rowNum}: ${studentError.message}`);
+        result.errorMessages.push(`Row ${rowNum} (${firstName} ${lastName}): ${studentError.message}`);
         continue;
       }
 
-      // Insert guardian (if info provided)
-      if (row.guardianFirstName && row.email) {
+      if (isDuplicate) result.duplicates++;
+
+      // Insert guardian
+      const guardianFirst = row["Parent or Guardian's Name  - First Name"]?.trim();
+      const guardianLast = row["Parent or Guardian's Name  - Last Name"]?.trim();
+      const email = row["Email"]?.trim();
+
+      if (guardianFirst && email) {
         await supabase.from("guardians").insert({
           student_id: student.id,
-          first_name: row.guardianFirstName,
-          last_name: row.guardianLastName || row.guardianFirstName,
-          email: row.email,
-          phone: row.phone || "",
-          zip_code: row.zipCode || "",
-          county: row.county || "",
+          first_name: guardianFirst,
+          last_name: guardianLast || guardianFirst,
+          email,
+          phone: row["Cell Phone Number"]?.trim() || "",
+          zip_code: row["Your Zip Code"]?.trim() || "",
+          county: row["Your County"]?.trim() || "",
           is_primary: true,
         });
       }
 
-      // Insert enrollment
-      const { data: enrollment, error: enrollmentError } = await supabase
-        .from("enrollments")
-        .insert({
-          student_id: student.id,
-          cycle_id: cycleId,
-          pack_code: packCode,
-          grade: row.grade || "K",
-          menstruation_preference:
-            row.gender === "Female" && row.menstruationPreference
-              ? row.menstruationPreference
-              : null,
-          school_district: row.schoolDistrict || "Other",
-          school_name: row.schoolName || "Unknown",
-          submitted_at: row.submittedAt || new Date().toISOString(),
-        })
-        .select("id")
-        .single();
+      // Create enrollments per cycle with distribution data
+      const schoolDistrict = row["School District"] || "Other";
+      const schoolName = getSchoolName(row);
+      const grade = row["Grade for the 2025 - 2026 School Year"] || "K";
+      const packCode = row["Pack Code"] || "0";
+      const menstruationPref = parseMenstruationPref(row);
+      const submittedAt = row["Submission Date"]
+        ? row["Submission Date"].includes("T")
+          ? row["Submission Date"]
+          : `${row["Submission Date"].replace(" ", "T")}Z`
+        : new Date().toISOString();
 
-      if (enrollmentError) {
-        result.errors++;
-        result.errorMessages.push(`Row ${rowNum}: Enrollment: ${enrollmentError.message}`);
-        continue;
-      }
+      const seasons = [
+        { key: "aug", cycleId: cycleIds.aug },
+        { key: "nov", cycleId: cycleIds.nov },
+        { key: "feb", cycleId: cycleIds.feb },
+        { key: "may", cycleId: cycleIds.may },
+      ] as const;
 
-      // Insert distributions if provided
-      const distInserts: Array<{
-        enrollment_id: string;
-        method: string;
-        completed: boolean;
-        completed_at: string | null;
-      }> = [];
+      for (const { key, cycleId } of seasons) {
+        if (!cycleId) continue;
 
-      if (row.pickupCompleted?.toLowerCase() === "yes" || row.pickupCompleted?.toLowerCase() === "true" || row.pickupDate) {
-        distInserts.push({
-          enrollment_id: enrollment.id,
-          method: "pickup",
-          completed: true,
-          completed_at: row.pickupDate || new Date().toISOString(),
-        });
-      }
-      if (row.schoolDeliveryCompleted?.toLowerCase() === "yes" || row.schoolDeliveryCompleted?.toLowerCase() === "true" || row.schoolDeliveryDate) {
-        distInserts.push({
-          enrollment_id: enrollment.id,
-          method: "school_delivery",
-          completed: true,
-          completed_at: row.schoolDeliveryDate || new Date().toISOString(),
-        });
-      }
-      if (row.binCompleted?.toLowerCase() === "yes" || row.binCompleted?.toLowerCase() === "true" || row.binDate) {
-        distInserts.push({
-          enrollment_id: enrollment.id,
-          method: "bin",
-          completed: true,
-          completed_at: row.binDate || new Date().toISOString(),
-        });
-      }
+        // Check if there's any distribution activity for this season
+        const prefix = key.charAt(0).toUpperCase() + key.slice(1);
+        const hasPickup = isTruthy(row[`${prefix} Pick Up`]);
+        const hasSchoolDel = isTruthy(row[`${prefix} School Delivery`]);
+        const hasBin = isTruthy(row[`${prefix} Bin`]);
+        const pickupTs = row[`${prefix} Pickup Timestamp`];
+        const schoolDelTs = row[`${prefix} School Delivery Timestamp`];
+        const binTs = row[`${prefix} Bin Timestamp`];
 
-      if (distInserts.length > 0) {
-        await supabase.from("distributions").insert(distInserts);
+        // Only create enrollment for Aug cycle (primary) or if there's distribution data for other cycles
+        const isPrimary = key === "aug";
+        const hasActivity = hasPickup || hasSchoolDel || hasBin || pickupTs || schoolDelTs || binTs;
+
+        if (!isPrimary && !hasActivity) continue;
+
+        const { data: enrollment, error: enrollError } = await supabase
+          .from("enrollments")
+          .insert({
+            student_id: student.id,
+            cycle_id: cycleId,
+            pack_code: packCode,
+            grade,
+            menstruation_preference: menstruationPref,
+            school_district: schoolDistrict,
+            school_name: schoolName,
+            submitted_at: submittedAt,
+          })
+          .select("id")
+          .single();
+
+        if (enrollError || !enrollment) continue;
+
+        // Insert distribution records
+        const distInserts: Array<{
+          enrollment_id: string;
+          method: string;
+          completed: boolean;
+          completed_at: string | null;
+        }> = [];
+
+        if (hasPickup || pickupTs) {
+          distInserts.push({
+            enrollment_id: enrollment.id,
+            method: "pickup",
+            completed: hasPickup || !!pickupTs,
+            completed_at: parseTimestamp(pickupTs),
+          });
+        }
+        if (hasSchoolDel || schoolDelTs) {
+          distInserts.push({
+            enrollment_id: enrollment.id,
+            method: "school_delivery",
+            completed: hasSchoolDel || !!schoolDelTs,
+            completed_at: parseTimestamp(schoolDelTs),
+          });
+        }
+        if (hasBin || binTs) {
+          distInserts.push({
+            enrollment_id: enrollment.id,
+            method: "bin",
+            completed: hasBin || !!binTs,
+            completed_at: parseTimestamp(binTs),
+          });
+        }
+
+        if (distInserts.length > 0) {
+          await supabase.from("distributions").insert(distInserts);
+        }
       }
 
       result.created++;
@@ -230,6 +344,9 @@ export async function importCSVData(
       );
     }
   }
+
+  // Reset the refresh_id sequence so new registrations get IDs above the imported ones
+  await supabase.rpc("reset_refresh_id_sequence");
 
   return result;
 }

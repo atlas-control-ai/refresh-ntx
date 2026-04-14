@@ -6,7 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { importCSVData, type ImportRow, type ImportResult } from "./actions";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { importSpreadsheet, type ImportResult } from "./actions";
 
 interface Cycle {
   id: string;
@@ -21,87 +29,47 @@ const SEASON_LABELS: Record<string, string> = {
   may: "May",
 };
 
-const IMPORT_FIELDS: { key: keyof ImportRow; label: string; required: boolean }[] = [
-  { key: "guardianFirstName", label: "Guardian First Name", required: false },
-  { key: "guardianLastName", label: "Guardian Last Name", required: false },
-  { key: "email", label: "Email", required: false },
-  { key: "phone", label: "Phone", required: false },
-  { key: "zipCode", label: "Zip Code", required: false },
-  { key: "county", label: "County", required: false },
-  { key: "childFirstName", label: "Child First Name", required: true },
-  { key: "childLastName", label: "Child Last Name", required: true },
-  { key: "dateOfBirth", label: "Date of Birth", required: false },
-  { key: "schoolStudentId", label: "Student ID", required: false },
-  { key: "grade", label: "Grade", required: false },
-  { key: "gender", label: "Gender", required: false },
-  { key: "ethnicity", label: "Ethnicity", required: false },
-  { key: "ethnicHairPreference", label: "Ethnic Hair Preference", required: false },
-  { key: "menstruationPreference", label: "Menstruation Preference", required: false },
-  { key: "schoolDistrict", label: "School District", required: false },
-  { key: "schoolName", label: "School Name", required: false },
-  { key: "packCode", label: "Pack Code", required: false },
-  { key: "pickupCompleted", label: "Pickup Completed", required: false },
-  { key: "pickupDate", label: "Pickup Date", required: false },
-  { key: "schoolDeliveryCompleted", label: "School Delivery Completed", required: false },
-  { key: "schoolDeliveryDate", label: "School Delivery Date", required: false },
-  { key: "binCompleted", label: "Bin Completed", required: false },
-  { key: "binDate", label: "Bin Date", required: false },
-  { key: "submittedAt", label: "Submission Date", required: false },
-];
-
-type Step = "upload" | "map" | "preview" | "importing" | "done";
+type Step = "upload" | "preview" | "importing" | "done";
 
 export function ImportTool({ cycles }: { cycles: Cycle[] }) {
   const [step, setStep] = useState<Step>("upload");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [csvData, setCsvData] = useState<any[]>([]);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [csvData, setCsvData] = useState<Record<string, string>[]>([]);
-  const [mapping, setMapping] = useState<Record<keyof ImportRow, string>>({} as Record<keyof ImportRow, string>);
-  const [cycleId, setCycleId] = useState(cycles[0]?.id ?? "");
   const [result, setResult] = useState<ImportResult | null>(null);
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Cycle selection for each season
+  const augCycle = cycles.find((c) => c.season === "aug");
+  const novCycle = cycles.find((c) => c.season === "nov");
+  const febCycle = cycles.find((c) => c.season === "feb");
+  const mayCycle = cycles.find((c) => c.season === "may");
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const headers = results.meta.fields ?? [];
-        setCsvHeaders(headers);
-        setCsvData(results.data as Record<string, string>[]);
+  const handleFileUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-        // Auto-map by fuzzy matching header names
-        const autoMap: Record<string, string> = {};
-        for (const field of IMPORT_FIELDS) {
-          const match = headers.find((h) => {
-            const hLower = h.toLowerCase().replace(/[^a-z]/g, "");
-            const fLower = field.label.toLowerCase().replace(/[^a-z]/g, "");
-            return hLower === fLower || hLower.includes(fLower) || fLower.includes(hLower);
-          });
-          if (match) autoMap[field.key] = match;
-        }
-        setMapping(autoMap as Record<keyof ImportRow, string>);
-        setStep("map");
-      },
-    });
-  }, []);
-
-  function applyMapping(): ImportRow[] {
-    return csvData.map((row) => {
-      const mapped: Record<string, string> = {};
-      for (const field of IMPORT_FIELDS) {
-        const csvCol = mapping[field.key];
-        mapped[field.key] = csvCol ? (row[csvCol] ?? "") : "";
-      }
-      return mapped as unknown as ImportRow;
-    });
-  }
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          setCsvHeaders(results.meta.fields ?? []);
+          setCsvData(results.data);
+          setStep("preview");
+        },
+      });
+    },
+    []
+  );
 
   async function handleImport() {
     setStep("importing");
-    const rows = applyMapping();
-    const res = await importCSVData(rows, cycleId);
+    const res = await importSpreadsheet(csvData, {
+      aug: augCycle?.id ?? "",
+      nov: novCycle?.id ?? "",
+      feb: febCycle?.id,
+      may: mayCycle?.id,
+    });
     setResult(res);
     setStep("done");
   }
@@ -110,22 +78,21 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Upload CSV File</CardTitle>
+          <CardTitle>Upload Refresh NTX Spreadsheet</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label>Target Cycle</Label>
-            <select
-              className="mt-1 flex h-9 w-full max-w-sm rounded-md border border-zinc-200 bg-white px-3 text-sm"
-              value={cycleId}
-              onChange={(e) => setCycleId(e.target.value)}
-            >
+            <Label>Detected Cycles</Label>
+            <div className="mt-1 flex flex-wrap gap-2">
               {cycles.map((c) => (
-                <option key={c.id} value={c.id}>
+                <Badge key={c.id} variant="secondary">
                   {c.program_years?.label} {SEASON_LABELS[c.season] ?? c.season}
-                </option>
+                </Badge>
               ))}
-            </select>
+            </div>
+            <p className="mt-1 text-xs text-zinc-500">
+              Distribution data will be imported into the matching season cycles.
+            </p>
           </div>
           <div>
             <Label>CSV File</Label>
@@ -137,103 +104,116 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
             />
           </div>
           <p className="text-xs text-zinc-500">
-            Upload a CSV exported from your existing Google Spreadsheet.
-            You will map columns in the next step.
+            Upload the &ldquo;Form Responses&rdquo; CSV export from Google Sheets.
+            Columns will be auto-mapped based on the known spreadsheet format.
           </p>
         </CardContent>
       </Card>
     );
   }
 
-  if (step === "map") {
+  if (step === "preview") {
+    const expectedCols = [
+      "Child's Name - First Name",
+      "Child's Name - Last Name",
+      "Pack Code",
+      "Refresh ID",
+    ];
+    const hasExpectedCols = expectedCols.every((c) =>
+      csvHeaders.includes(c)
+    );
+
     return (
       <div className="space-y-6">
         <Card>
           <CardHeader>
             <CardTitle>
-              Map Columns
+              Preview
               <span className="ml-2 text-sm font-normal text-zinc-500">
-                {csvData.length} rows detected, {csvHeaders.length} columns
+                {csvData.length} rows, {csvHeaders.length} columns
               </span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {IMPORT_FIELDS.map((field) => (
-                <div key={field.key}>
-                  <Label className="text-xs">
-                    {field.label}
-                    {field.required && <span className="text-red-500"> *</span>}
-                  </Label>
-                  <select
-                    className="mt-0.5 flex h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-sm"
-                    value={mapping[field.key] ?? ""}
-                    onChange={(e) =>
-                      setMapping((prev) => ({
-                        ...prev,
-                        [field.key]: e.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">— skip —</option>
-                    {csvHeaders.map((h) => (
-                      <option key={h} value={h}>
-                        {h}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+          <CardContent className="space-y-4">
+            {!hasExpectedCols && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                Warning: Some expected columns are missing. Make sure this is the
+                correct Refresh NTX spreadsheet export.
+              </div>
+            )}
 
-        {/* Preview first 5 rows */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Preview (first 5 rows)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr>
-                    {IMPORT_FIELDS.filter((f) => mapping[f.key]).map((f) => (
-                      <th
-                        key={f.key}
-                        className="border-b px-2 py-1 text-left font-medium text-zinc-500"
-                      >
-                        {f.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {applyMapping()
-                    .slice(0, 5)
-                    .map((row, i) => (
-                      <tr key={i}>
-                        {IMPORT_FIELDS.filter((f) => mapping[f.key]).map((f) => (
-                          <td
-                            key={f.key}
-                            className="border-b px-2 py-1 text-zinc-700"
-                          >
-                            {row[f.key] || "—"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead>
+                    <TableHead>Refresh ID</TableHead>
+                    <TableHead>Student Name</TableHead>
+                    <TableHead>Guardian</TableHead>
+                    <TableHead>Grade</TableHead>
+                    <TableHead>School</TableHead>
+                    <TableHead>Pack</TableHead>
+                    <TableHead>District</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {csvData.slice(0, 10).map((row, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-zinc-400">{i + 1}</TableCell>
+                      <TableCell className="font-mono">
+                        {row["Refresh ID"]}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {row["Child's Name - First Name"]}{" "}
+                        {row["Child's Name - Last Name"]}
+                      </TableCell>
+                      <TableCell className="text-zinc-500">
+                        {row["Parent or Guardian's Name  - First Name"]}{" "}
+                        {row["Parent or Guardian's Name  - Last Name"]}
+                      </TableCell>
+                      <TableCell>
+                        {row["Grade for the 2025 - 2026 School Year"]}
+                      </TableCell>
+                      <TableCell className="text-zinc-500 max-w-[150px] truncate">
+                        {row["Frisco ISD Schools"] ||
+                          row["Little Elm ISD Schools"] ||
+                          row["Denton ISD Schools"] ||
+                          row["North Texas Collegiate Academy"] ||
+                          row["Other Schools"] ||
+                          "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">
+                          {row["Pack Code"]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-zinc-500">
+                        {row["School District"]}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
+            {csvData.length > 10 && (
+              <p className="text-xs text-zinc-500">
+                Showing first 10 of {csvData.length} rows.
+              </p>
+            )}
           </CardContent>
         </Card>
 
         <div className="flex gap-3">
-          <Button onClick={handleImport}>
+          <Button onClick={handleImport} size="lg">
             Import {csvData.length} Records
           </Button>
-          <Button variant="outline" onClick={() => setStep("upload")}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStep("upload");
+              setCsvData([]);
+            }}
+          >
             Back
           </Button>
         </div>
@@ -246,9 +226,11 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
       <Card>
         <CardContent className="flex items-center justify-center py-16">
           <div className="text-center">
-            <p className="text-lg font-medium text-zinc-900">Importing...</p>
+            <p className="text-lg font-medium text-zinc-900">
+              Importing {csvData.length} records...
+            </p>
             <p className="mt-1 text-sm text-zinc-500">
-              Processing {csvData.length} records. This may take a moment.
+              This will take a few minutes. Please don&apos;t close this page.
             </p>
           </div>
         </CardContent>
@@ -266,22 +248,42 @@ export function ImportTool({ cycles }: { cycles: Cycle[] }) {
           <div className="grid gap-4 sm:grid-cols-4">
             <StatCard label="Total Rows" value={result.total} />
             <StatCard label="Created" value={result.created} color="green" />
-            <StatCard label="Duplicates Flagged" value={result.duplicates} color="amber" />
+            <StatCard
+              label="Duplicates Flagged"
+              value={result.duplicates}
+              color="amber"
+            />
             <StatCard label="Errors" value={result.errors} color="red" />
           </div>
+          {result.skipped > 0 && (
+            <p className="text-sm text-zinc-500">
+              {result.skipped} rows skipped (missing student name).
+            </p>
+          )}
 
           {result.errorMessages.length > 0 && (
             <div className="rounded-md border border-red-200 bg-red-50 p-4">
-              <h3 className="text-sm font-medium text-red-800">Error Details</h3>
+              <h3 className="text-sm font-medium text-red-800">
+                Error Details ({result.errorMessages.length})
+              </h3>
               <ul className="mt-2 max-h-60 space-y-1 overflow-auto text-xs text-red-700">
-                {result.errorMessages.map((msg, i) => (
+                {result.errorMessages.slice(0, 50).map((msg, i) => (
                   <li key={i}>{msg}</li>
                 ))}
+                {result.errorMessages.length > 50 && (
+                  <li>... and {result.errorMessages.length - 50} more</li>
+                )}
               </ul>
             </div>
           )}
 
-          <Button onClick={() => { setStep("upload"); setResult(null); setCsvData([]); }}>
+          <Button
+            onClick={() => {
+              setStep("upload");
+              setResult(null);
+              setCsvData([]);
+            }}
+          >
             Import Another File
           </Button>
         </CardContent>
@@ -301,13 +303,14 @@ function StatCard({
   value: number;
   color?: "green" | "amber" | "red";
 }) {
-  const colorClass = color === "green"
-    ? "text-green-700"
-    : color === "amber"
-    ? "text-amber-700"
-    : color === "red"
-    ? "text-red-700"
-    : "text-zinc-900";
+  const colorClass =
+    color === "green"
+      ? "text-green-700"
+      : color === "amber"
+      ? "text-amber-700"
+      : color === "red"
+      ? "text-red-700"
+      : "text-zinc-900";
 
   return (
     <div className="rounded-md border p-3 text-center">

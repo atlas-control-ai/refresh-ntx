@@ -320,6 +320,7 @@ export type Database = {
     }
     Functions: {
       get_user_role: { Args: never; Returns: string }
+      reset_refresh_id_sequence: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
